@@ -36,6 +36,8 @@ On any scene browse page, click the grid icon button next to the pagination cont
 
 You can queue up to **9 scenes** at once.
 
+![Picking Mode](screenshot-picking.png)
+
 ### Scene Detail Page
 
 On an individual scene's page, a grid icon button appears in the scene toolbar. Click it to toggle that scene in or out of your queue.
@@ -45,6 +47,8 @@ On an individual scene's page, a grid icon button appears in the scene toolbar. 
 Once at least one scene is queued, a floating **Open Multiview** launcher appears in the bottom-right corner of the screen. It shows the number of queued scenes and opens the player in a new tab. Click **✕** to clear the queue without opening the player.
 
 The queue is shared across tabs — adding scenes on one tab is immediately reflected in another.
+
+![Player](screenshot-player.png)
 
 ### Player Controls
 
