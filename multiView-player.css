@@ -1,0 +1,400 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    height: 100%;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+}
+
+/* ── Top bar ───────────────────────────────────────────────────────────────── */
+
+#mv-topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 44px;
+    background: #111;
+    border-bottom: 1px solid #222;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    z-index: 100;
+}
+
+#mv-back-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #aaa;
+    text-decoration: none;
+    font-size: 13px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    transition: color 0.15s, background 0.15s;
+    white-space: nowrap;
+}
+
+#mv-back-btn:hover { color: #fff; background: #222; }
+
+#mv-back-btn svg { width: 12px; height: 12px; }
+
+.mv-topbar-sep {
+    width: 1px;
+    height: 20px;
+    background: #333;
+    flex-shrink: 0;
+}
+
+#mv-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ddd;
+    flex: 1;
+    min-width: 0;
+}
+
+.mv-topbar-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 5px;
+    color: #888;
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+}
+
+.mv-topbar-icon-btn:hover { background: #2a2a2a; color: #ccc; }
+.mv-topbar-icon-btn svg { width: 13px; height: 13px; }
+
+#mv-playpause-all-btn { color: #888; }
+#mv-playpause-all-btn:hover { color: #fff; }
+
+#mv-mute-all-btn { color: #888; }
+#mv-mute-all-btn:hover { color: #fff; }
+
+#mv-o-all-btn { color: #f97316; }
+#mv-o-all-btn:hover { color: #fff; background: #f97316; border-color: #f97316; }
+
+/* ── Grid ──────────────────────────────────────────────────────────────────── */
+
+#mv-grid {
+    position: fixed;
+    top: 44px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    gap: 3px;
+    background: #0a0a0a;
+    padding: 3px;
+}
+
+/* Layout classes set column/row counts */
+#mv-grid.layout-1x1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+#mv-grid.layout-2x1 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+#mv-grid.layout-2x2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+#mv-grid.layout-3x2 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+#mv-grid.layout-3x3 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; }
+
+/* ── Cell ──────────────────────────────────────────────────────────────────── */
+
+.mv-cell {
+    position: relative;
+    background: #111;
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.mv-cell.audio-active {
+    outline: 2px solid #f97316;
+    outline-offset: -2px;
+}
+
+.mv-cell video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+/* ── Cell overlay ──────────────────────────────────────────────────────────── */
+
+.mv-cell-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 40%, transparent 60%, rgba(0,0,0,0.55) 100%);
+    opacity: 0;
+    transition: opacity 0.2s;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 8px;
+    pointer-events: none;
+}
+
+.mv-cell:hover .mv-cell-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.mv-cell-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.3;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.mv-cell-title:hover {
+    text-decoration: underline;
+    color: #fff;
+}
+
+.mv-cell-playpause {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.mv-cell-playpause:hover {
+    background: rgba(0, 0, 0, 0.85);
+    transform: translate(-50%, -50%) scale(1.1);
+}
+
+.mv-cell-playpause svg { width: 18px; height: 18px; }
+
+.mv-cell-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.mv-cell-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.65);
+    border: none;
+    border-radius: 4px;
+    color: #ddd;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+}
+
+.mv-cell-btn:hover { background: rgba(0,0,0,0.9); color: #fff; }
+.mv-cell-btn.audio-on { color: #f97316; }
+.mv-cell-btn svg { width: 14px; height: 14px; }
+
+.mv-cell-remove { }
+.mv-cell-remove:hover { color: #ef4444; }
+
+.mv-o-btn {
+    color: #f97316;
+    width: auto;
+    padding: 0 7px;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.mv-o-btn svg { width: 11px; height: 11px; flex-shrink: 0; }
+.mv-o-btn:hover { color: #fff; background: #f97316 !important; }
+
+/* ── Seekbar ───────────────────────────────────────────────────────────────── */
+
+.mv-seekbar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    cursor: pointer;
+    z-index: 15;
+    transition: height 0.15s;
+}
+
+/* Invisible extended hit area reaching up into the cell */
+.mv-seekbar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 28px;
+}
+
+.mv-cell:hover .mv-seekbar {
+    height: 6px;
+}
+
+.mv-seekbar-fill {
+    height: 100%;
+    background: #f97316;
+    width: 0%;
+    pointer-events: none;
+}
+
+/* ── Volume popup ──────────────────────────────────────────────────────────── */
+
+.mv-vol-popup {
+    display: none;
+    position: absolute;
+    bottom: 44px;
+    right: 8px;
+    z-index: 20;
+    background: rgba(15, 15, 15, 0.96);
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 10px 10px 8px;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    backdrop-filter: blur(6px);
+}
+
+.mv-vol-popup.is-open {
+    display: flex;
+}
+
+.mv-vol-label {
+    font-size: 10px;
+    color: #aaa;
+    font-variant-numeric: tabular-nums;
+    min-width: 30px;
+    text-align: center;
+}
+
+.mv-popup-mute-btn {
+    width: 28px;
+    height: 28px;
+    border-top: 1px solid #333;
+    padding-top: 6px;
+    margin-top: 2px;
+    background: transparent !important;
+    border-radius: 0 0 4px 4px;
+}
+
+.mv-vol-slider {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 20px;
+    height: 90px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    outline: none;
+    padding: 0;
+}
+
+.mv-vol-slider::-webkit-slider-runnable-track {
+    width: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+}
+
+.mv-vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #f97316;
+    margin-left: -5px;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.mv-vol-slider::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+.mv-vol-slider::-moz-range-track {
+    width: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+}
+
+.mv-vol-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: none;
+    border-radius: 50%;
+    background: #f97316;
+    cursor: pointer;
+}
+
+/* Keep overlay visible while a volume popup is open on this cell */
+.mv-cell.mv-popup-open .mv-cell-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ── Empty state ───────────────────────────────────────────────────────────── */
+
+#mv-empty {
+    position: fixed;
+    inset: 44px 0 0 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    color: #555;
+}
+
+#mv-empty svg { width: 48px; height: 48px; opacity: 0.4; }
+#mv-empty p { font-size: 14px; }
+#mv-empty a { color: #f97316; text-decoration: none; }
+#mv-empty a:hover { text-decoration: underline; }
+
+/* ── Loading spinner ───────────────────────────────────────────────────────── */
+
+.mv-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mv-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid #333;
+    border-top-color: #f97316;
+    border-radius: 50%;
+    animation: mv-spin 0.7s linear infinite;
+}
+
+@keyframes mv-spin { to { transform: rotate(360deg); } }
