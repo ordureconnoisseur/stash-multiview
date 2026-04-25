@@ -76,37 +76,6 @@
             });
 
             pagination.appendChild(btn);
-
-            requestAnimationFrame(() => {
-                // Reference: first nav button (has the theme's exact border-radius)
-                const firstBtn = pagination.querySelector('.btn:not(.mv-picking-toggle-btn)');
-                // The » button is now second-to-last
-                const lastNav = pagination.querySelector('.btn:nth-last-child(2)');
-
-                if (!firstBtn) return;
-                const h = firstBtn.getBoundingClientRect().height;
-                if (h <= 0) return;
-
-                // Size our button to exactly match the nav buttons
-                btn.style.height = h + 'px';
-                btn.style.lineHeight = h + 'px';
-                btn.style.padding = '0 10px';
-                btn.style.boxSizing = 'border-box';
-                btn.style.marginLeft = '12px';
-
-                // Restore »'s right-side rounding using the exact computed value from «
-                if (lastNav) {
-                    const cs = getComputedStyle(firstBtn);
-                    const radius = cs.borderTopLeftRadius;
-                    const borderW = cs.borderLeftWidth;
-                    const borderC = cs.borderLeftColor;
-                    lastNav.style.borderTopRightRadius = radius;
-                    lastNav.style.borderBottomRightRadius = radius;
-                    lastNav.style.borderRightWidth = borderW;
-                    lastNav.style.borderRightStyle = 'solid';
-                    lastNav.style.borderRightColor = borderC;
-                }
-            });
         });
     }
 
@@ -165,7 +134,13 @@
             btn.title = queued ? 'Remove from Multiview' : 'Add to Multiview';
         });
 
-        sceneToolbar.appendChild(btn);
+        // Insert immediately after ⋮ so spacing matches the rest of the toolbar
+        const moreBtn = sceneToolbar.querySelector('.dropdown-toggle, .dropdown > button, button[title="More"]');
+        if (moreBtn) {
+            moreBtn.insertAdjacentElement('afterend', btn);
+        } else {
+            sceneToolbar.appendChild(btn);
+        }
     }
 
     // ── Update all existing card buttons ──────────────────────────────────────
