@@ -1,0 +1,11 @@
+name: Multi-View Player
+description: Queue scenes from browse pages and watch up to 9 simultaneously in a minimal grid layout.
+version: 1.0.0
+url: https://github.com/ordureconnoisseur/plugins
+ui:
+  assets:
+    /: .
+  javascript:
+    - multiView.js
+  css:
+    - multiView.css
