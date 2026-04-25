@@ -7,22 +7,30 @@ body:not(.mv-picking-mode) .mv-add-btn {
 
 .mv-picking-toggle-btn {
     display: inline-flex !important;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    border-radius: 0.375rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    width: 2rem !important;
+    aspect-ratio: 1;
+    margin-left: 12px !important;
 }
 
 .mv-picking-toggle-btn svg {
-    width: 15px;
-    height: 15px;
+    width: 1em;
+    height: 1em;
     display: block;
+    flex-shrink: 0;
 }
 
 .mv-picking-toggle-btn.active {
-    background-color: #f97316 !important;
+    color: #f97316 !important;
     border-color: #f97316 !important;
-    color: #fff !important;
+}
+
+/* Restore » right-side rounding when our button is appended as :last-child */
+.pagination:has(.mv-picking-toggle-btn) .btn:nth-last-child(2):not(.mv-picking-toggle-btn) {
+    border-top-right-radius: var(--bs-btn-border-radius, 0.375rem) !important;
+    border-bottom-right-radius: var(--bs-btn-border-radius, 0.375rem) !important;
 }
 
 /* ── Card add buttons ──────────────────────────────────────────────────────── */
@@ -60,6 +68,9 @@ body:not(.mv-picking-mode) .mv-add-btn {
 /* ── Scene page button ─────────────────────────────────────────────────────── */
 
 .mv-scene-page-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     padding: 0 !important;
     width: 2rem !important;
     aspect-ratio: 1;
@@ -75,6 +86,7 @@ body:not(.mv-picking-mode) .mv-add-btn {
     width: 1em;
     height: 1em;
     display: block;
+    flex-shrink: 0;
 }
 
 /* ── Floating launcher ─────────────────────────────────────────────────────── */
