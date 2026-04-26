@@ -90,18 +90,26 @@
     // ── Stream selection ──────────────────────────────────────────────────────
 
     function parseStreams(streamList) {
-        const s = { direct: null, webm720: null, webm480: null, mp4720: null, mp4480: null };
+        const s = {};
         if (!streamList) return s;
         for (const entry of streamList) {
             const label = (entry.label || '').toLowerCase();
             const isWebm = (entry.mime_type || '').includes('webm');
+            
+            const is1080 = label.includes('1080');
             const is720 = label.includes('720');
             const is480 = label.includes('480');
-            if (is720 && isWebm)       s.webm720 = entry.url;
-            else if (is480 && isWebm)  s.webm480 = entry.url;
-            else if (is720)            s.mp4720  = entry.url;
-            else if (is480)            s.mp4480  = entry.url;
-            else                       s.direct  = entry.url;
+            const is360 = label.includes('360') || label.includes('240');
+
+            if (is1080 && isWebm)      s.webm1080 = entry.url;
+            else if (is1080)           s.mp41080  = entry.url;
+            else if (is720 && isWebm)  s.webm720  = entry.url;
+            else if (is720)            s.mp4720   = entry.url;
+            else if (is480 && isWebm)  s.webm480  = entry.url;
+            else if (is480)            s.mp4480   = entry.url;
+            else if (is360 && isWebm)  s.webm360  = entry.url;
+            else if (is360)            s.mp4360   = entry.url;
+            else if (!s.direct)        s.direct   = entry.url;
         }
         return s;
     }
@@ -110,9 +118,26 @@
         const s = scenes[id]?.streams;
         if (!s) return `/scene/${id}/stream`;
         const count = queue.length;
-        if (count >= 4) return s.webm480 || s.mp4480 || s.webm720 || s.mp4720 || s.direct || `/scene/${id}/stream`;
-        if (count >= 2) return s.webm720 || s.mp4720 || s.webm480 || s.mp4480 || s.direct || `/scene/${id}/stream`;
-        return s.direct || `/scene/${id}/stream`;
+        
+        const res360  = s.webm360  || s.mp4360;
+        const res480  = s.webm480  || s.mp4480;
+        const res720  = s.webm720  || s.mp4720;
+        const res1080 = s.webm1080 || s.mp41080;
+        const direct  = s.direct   || `/scene/${id}/stream`;
+
+        if (count >= 7) {
+            // 9-grid: Prefer 480p, then 360p, then 720p
+            return res480 || res360 || res720 || direct;
+        } else if (count >= 5) {
+            // 6-grid: Prefer 480p, then 720p, then 1080p
+            return res480 || res720 || res1080 || direct;
+        } else if (count >= 2) {
+            // 2-grid or 4-grid: Prefer 720p, then 480p, then 1080p
+            return res720 || res480 || res1080 || direct;
+        } else {
+            // 1-grid: Prefer 1080p, then 720p, then direct
+            return res1080 || res720 || direct;
+        }
     }
 
     // ── GraphQL ───────────────────────────────────────────────────────────────
@@ -178,12 +203,28 @@
 
     // ── Layout ────────────────────────────────────────────────────────────────
 
-    function autoLayout(count) {
+    function autoLayout(count, isPortrait = false) {
         if (count <= 1) return '1x1';
         if (count <= 2) return '2x1';
+        if (isPortrait && count === 3) return '3x1';
         if (count <= 4) return '2x2';
         if (count <= 6) return '3x2';
         return '3x3';
+    }
+
+    function detectAndApplyOrientation() {
+        const videos = [...document.querySelectorAll('.mv-cell video')];
+        const loaded = videos.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+        if (!loaded.length) return;
+
+        const portraitCount = loaded.filter(v => v.videoHeight > v.videoWidth).length;
+        const isPortrait = portraitCount > loaded.length / 2;
+
+        const grid = document.getElementById('mv-grid');
+        const expectedLayout = autoLayout(queue.length, isPortrait);
+        if (grid && grid.className !== 'layout-' + expectedLayout) {
+            grid.className = 'layout-' + expectedLayout;
+        }
     }
 
     // ── Play / Pause All ──────────────────────────────────────────────────────
@@ -267,7 +308,33 @@
         if (!activeSeek || activeSeek.ratio == null) return;
         const { video, id, ratio } = activeSeek;
         const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
-        if (duration) video.currentTime = ratio * duration;
+        if (!duration) return;
+
+        const targetTime = ratio * duration;
+        const currentSrc = video.getAttribute('src');
+
+        // Check if it's a transcoded stream
+        const isTranscode = currentSrc && (currentSrc.includes('.webm') || currentSrc.includes('.mp4'));
+
+        if (isTranscode) {
+            const baseSrc = currentSrc.split(/[?&]start=/)[0];
+            const sep = baseSrc.includes('?') ? '&' : '?';
+            seekBases.set(id, targetTime);
+            const wasPlaying = !video.paused;
+            
+            const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
+            if (cell && !cell.querySelector('.mv-loading')) {
+                const s = document.createElement('div');
+                s.className = 'mv-loading';
+                s.innerHTML = '<div class="mv-spinner"></div>';
+                cell.appendChild(s);
+            }
+            
+            video.src = baseSrc + sep + 'start=' + targetTime;
+            if (wasPlaying || video.autoplay) video.play();
+        } else {
+            video.currentTime = targetTime;
+        }
     }
 
     // ── Volume popup ──────────────────────────────────────────────────────────
@@ -303,7 +370,7 @@
             grid.innerHTML = '';
             grid.className = 'layout-1x1';
             empty.style.display = 'flex';
-            titleEl.textContent = 'Multi-View Player';
+            titleEl.textContent = 'Stash Multiview';
             return;
         }
 
@@ -313,9 +380,52 @@
         const layout = autoLayout(queue.length);
         grid.className = 'layout-' + layout;
 
-        // Remove cells no longer in queue
+        // Remove cells no longer in queue, and update quality for existing ones
         grid.querySelectorAll('.mv-cell').forEach(cell => {
-            if (!queue.includes(cell.dataset.sceneId)) cell.remove();
+            const id = cell.dataset.sceneId;
+            if (!queue.includes(id)) {
+                cell.remove();
+                return;
+            }
+
+            const video = cell.querySelector('video');
+            if (!video) return;
+
+            const optimalSrc = pickStream(id);
+            const currentSrc = video.getAttribute('src') || '';
+            const baseSrc = currentSrc.split(/[?&]start=/)[0];
+
+            if (baseSrc && baseSrc !== optimalSrc) {
+                let currentTime = video.currentTime;
+                if (currentSrc.match(/[?&]start=/)) {
+                    currentTime += (seekBases.get(id) || 0);
+                }
+
+                const wasPlaying = !video.paused;
+                const isTranscode = optimalSrc.includes('.webm') || optimalSrc.includes('.mp4');
+
+                if (!cell.querySelector('.mv-loading')) {
+                    const s = document.createElement('div');
+                    s.className = 'mv-loading';
+                    s.innerHTML = '<div class="mv-spinner"></div>';
+                    cell.appendChild(s);
+                }
+
+                if (isTranscode && currentTime > 0) {
+                    const sep = optimalSrc.includes('?') ? '&' : '?';
+                    seekBases.set(id, currentTime);
+                    video.src = optimalSrc + sep + 'start=' + currentTime;
+                } else {
+                    seekBases.set(id, 0);
+                    video.src = optimalSrc;
+                    const onMeta = () => {
+                        if (currentTime > 0) video.currentTime = currentTime;
+                        video.removeEventListener('loadedmetadata', onMeta);
+                    };
+                    video.addEventListener('loadedmetadata', onMeta);
+                }
+                if (wasPlaying || video.autoplay) video.play();
+            }
         });
 
         // Add new cells
@@ -334,7 +444,10 @@
             video.playsInline = true;
 
             // Wire into Web Audio graph once metadata is loaded (avoids cross-origin issues on uncached src)
-            video.addEventListener('loadedmetadata', () => connectAudio(id, video), { once: true });
+            video.addEventListener('loadedmetadata', () => {
+                connectAudio(id, video);
+                detectAndApplyOrientation();
+            }, { once: true });
 
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'mv-loading';
@@ -450,10 +563,20 @@
             seekFill.className = 'mv-seekbar-fill';
             seekbar.appendChild(seekFill);
 
+            const updateProgress = () => {
+                if (activeSeek && activeSeek.id === id) return;
+                const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
+                const currentSrc = video.getAttribute('src');
+                let current = video.currentTime;
+                if (currentSrc && currentSrc.match(/[?&]start=/)) {
+                    current += (seekBases.get(id) || 0);
+                }
+                if (duration) seekFill.style.width = (current / duration * 100) + '%';
+            };
+
             video.addEventListener('timeupdate', () => {
                 if (video.seeking) return;
-                const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
-                if (duration) seekFill.style.width = (video.currentTime / duration * 100) + '%';
+                updateProgress();
             });
 
             video.addEventListener('seeking', () => {
@@ -467,8 +590,11 @@
 
             video.addEventListener('seeked', () => {
                 cell.querySelector('.mv-loading')?.remove();
-                const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
-                if (duration) seekFill.style.width = (video.currentTime / duration * 100) + '%';
+                updateProgress();
+            });
+
+            video.addEventListener('canplay', () => {
+                cell.querySelector('.mv-loading')?.remove();
             });
 
             seekbar.addEventListener('mousedown', e => {
@@ -515,12 +641,6 @@
             if (!e.target.closest('.mv-vol-popup') && !e.target.closest('.mv-cell-audio-btn')) {
                 closeAllPopups();
             }
-        });
-
-        document.addEventListener('keydown', e => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-            if (e.code === 'Space') { e.preventDefault(); playPauseAll(); }
-            if (e.key === 'm' || e.key === 'M') toggleMuteAll();
         });
 
         await loadSceneMeta(queue);
