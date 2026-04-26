@@ -101,6 +101,7 @@ html, body {
 /* Layout classes set column/row counts */
 #mv-grid.layout-1x1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
 #mv-grid.layout-2x1 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+#mv-grid.layout-3x1 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr; }
 #mv-grid.layout-2x2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 #mv-grid.layout-3x2 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
 #mv-grid.layout-3x3 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; }
@@ -140,11 +141,11 @@ html, body {
     justify-content: space-between;
     padding: 8px;
     pointer-events: none;
+    z-index: 20;
 }
 
 .mv-cell:hover .mv-cell-overlay {
     opacity: 1;
-    pointer-events: auto;
 }
 
 .mv-cell-title {
@@ -159,6 +160,7 @@ html, body {
     -webkit-box-orient: vertical;
     text-decoration: none;
     cursor: pointer;
+    pointer-events: auto;
 }
 
 .mv-cell-title:hover {
@@ -171,17 +173,18 @@ html, body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
+    width: 64px;
+    height: 64px;
     border: none;
-    background: rgba(0, 0, 0, 0.6);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.65);
     color: #fff;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background 0.15s, transform 0.1s;
+    pointer-events: auto;
 }
 
 .mv-cell-playpause:hover {
@@ -197,7 +200,6 @@ html, body {
     justify-content: flex-end;
     gap: 6px;
 }
-
 .mv-cell-btn {
     display: flex;
     align-items: center;
@@ -210,6 +212,7 @@ html, body {
     height: 28px;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
+    pointer-events: auto;
     flex-shrink: 0;
 }
 

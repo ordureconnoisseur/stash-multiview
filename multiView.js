@@ -24,6 +24,7 @@
             btn.classList.toggle('active', getPickingMode());
             btn.title = getPickingMode() ? 'Disable Multiview Picking Mode' : 'Enable Multiview Picking Mode';
         });
+        updateLauncher();
     }
 
     function getQueue() {
@@ -55,28 +56,47 @@
 
     // ── Pagination Toggle Button ──────────────────────────────────────────────
 
+    function createPickingToggleBtn() {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary mv-picking-toggle-btn' + (getPickingMode() ? ' active' : '');
+        btn.title = getPickingMode() ? 'Disable Multiview Picking Mode' : 'Enable Multiview Picking Mode';
+        btn.innerHTML = GRID_ICON_SVG;
+        btn.addEventListener('click', e => {
+            e.preventDefault();
+            togglePickingMode();
+        });
+        return btn;
+    }
+
     function injectPickingModeToggle() {
-        // Only run if we are on a list view with pagination (not a scene detail page)
-        if (window.location.pathname.match(/^\/scenes\/\d+/)) return;
+        if (window.location.pathname.match(/^\/scenes\/\d+/)) {
+            document.getElementById('mv-picking-standalone')?.remove();
+            return;
+        }
 
         const paginations = document.querySelectorAll('.pagination');
-        if (!paginations.length) return;
 
-        paginations.forEach(pagination => {
-            if (pagination.querySelector('.mv-picking-toggle-btn')) return;
-
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-secondary mv-picking-toggle-btn' + (getPickingMode() ? ' active' : '');
-            btn.title = getPickingMode() ? 'Disable Multiview Picking Mode' : 'Enable Multiview Picking Mode';
-            btn.innerHTML = GRID_ICON_SVG;
-
-            btn.addEventListener('click', e => {
-                e.preventDefault();
-                togglePickingMode();
+        if (paginations.length) {
+            document.getElementById('mv-picking-standalone')?.remove();
+            paginations.forEach(pagination => {
+                if (pagination.querySelector('.mv-picking-toggle-btn')) return;
+                const btn = createPickingToggleBtn();
+                btn.style.marginLeft = '12px';
+                pagination.appendChild(btn);
             });
+            return;
+        }
 
-            pagination.appendChild(btn);
-        });
+        // No pagination: show a standalone fixed button whenever scene cards are present
+        if (!document.querySelector('.scene-card')) {
+            document.getElementById('mv-picking-standalone')?.remove();
+            return;
+        }
+        if (document.getElementById('mv-picking-standalone')) return;
+
+        const btn = createPickingToggleBtn();
+        btn.id = 'mv-picking-standalone';
+        document.body.appendChild(btn);
     }
 
     // ── Card buttons ──────────────────────────────────────────────────────────
@@ -118,29 +138,24 @@
         const id = match[1];
         if (document.getElementById('mv-scene-btn')) return;
 
-        const sceneToolbar = document.querySelector('.scene-toolbar');
-        if (!sceneToolbar) return;
+        const toolbar = document.querySelector('.scene-toolbar .scene-toolbar-group:last-child, .scene-toolbar');
+        if (!toolbar) return;
 
         const btn = document.createElement('button');
         btn.id = 'mv-scene-btn';
-        btn.className = 'btn btn-secondary mv-scene-page-btn' + (isQueued(id) ? ' mv-queued' : '');
+        btn.className = 'mv-scene-page-btn btn btn-secondary' + (isQueued(id) ? ' active' : '');
         btn.title = isQueued(id) ? 'Remove from Multiview' : 'Add to Multiview';
-        btn.innerHTML = GRID_ICON_SVG;
+        btn.innerHTML = GRID_ICON_SVG + '<span>' + (isQueued(id) ? 'In Queue' : 'Multiview') + '</span>';
 
         btn.addEventListener('click', () => {
             toggleScene(id);
             const queued = isQueued(id);
-            btn.classList.toggle('mv-queued', queued);
+            btn.classList.toggle('active', queued);
             btn.title = queued ? 'Remove from Multiview' : 'Add to Multiview';
+            btn.querySelector('span').textContent = queued ? 'In Queue' : 'Multiview';
         });
 
-        // Insert immediately after ⋮ so spacing matches the rest of the toolbar
-        const moreBtn = sceneToolbar.querySelector('.dropdown-toggle, .dropdown > button, button[title="More"]');
-        if (moreBtn) {
-            moreBtn.insertAdjacentElement('afterend', btn);
-        } else {
-            sceneToolbar.appendChild(btn);
-        }
+        toolbar.appendChild(btn);
     }
 
     // ── Update all existing card buttons ──────────────────────────────────────
@@ -156,8 +171,8 @@
             const m = window.location.pathname.match(/^\/scenes\/(\d+)/);
             if (m) {
                 const queued = isQueued(m[1]);
-                sceneBtn.classList.toggle('mv-queued', queued);
-                sceneBtn.title = queued ? 'Remove from Multiview' : 'Add to Multiview';
+                sceneBtn.classList.toggle('active', queued);
+                sceneBtn.querySelector('span').textContent = queued ? 'In Queue' : 'Multiview';
             }
         }
     }
@@ -168,7 +183,7 @@
         const q = getQueue();
         let el = document.getElementById('mv-launcher');
 
-        if (q.length === 0) { if (el) el.remove(); return; }
+        if (q.length === 0 || !getPickingMode()) { if (el) el.remove(); return; }
 
         if (!el) {
             el = document.createElement('div');
