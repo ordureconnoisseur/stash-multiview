@@ -32,7 +32,7 @@ A Stash plugin that lets you queue scenes from any browse page and watch up to 9
 
 ### Picking Mode
 
-On any scene browse page, click the grid icon button next to the pagination controls to enable **Picking Mode**. While active, each scene card shows a **+** button in the top-right corner. Click it to add that scene to your queue — the button turns orange and shows a **✓** to confirm it's queued.
+On any scene browse page, click the grid icon button in the toolbar (next to the view mode buttons, before the zoom slider) to enable **Picking Mode**. While active, each scene card shows a **+** button in the top-right corner. Click it to add that scene to your queue — the button turns orange and shows a **✓** to confirm it's queued.
 
 You can queue up to **9 scenes** at once.
 
@@ -40,7 +40,7 @@ You can queue up to **9 scenes** at once.
 
 ### Scene Detail Page
 
-On an individual scene's page, a grid icon button appears in the scene toolbar. Click it to toggle that scene in or out of your queue.
+On an individual scene's page, a grid icon button appears in the scene toolbar. Click it to toggle that scene in or out of your queue — it turns orange when the scene is queued.
 
 ### Launching the Player
 
