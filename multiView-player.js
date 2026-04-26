@@ -379,6 +379,8 @@
 
         const layout = autoLayout(queue.length);
         grid.className = 'layout-' + layout;
+        // Correct layout immediately if videos already have dimensions (re-render case)
+        detectAndApplyOrientation();
 
         // Remove cells no longer in queue, and update quality for existing ones
         grid.querySelectorAll('.mv-cell').forEach(cell => {
@@ -443,7 +445,6 @@
             video.muted = !unmutedIds.has(id);
             video.playsInline = true;
 
-            // Wire into Web Audio graph once metadata is loaded (avoids cross-origin issues on uncached src)
             video.addEventListener('loadedmetadata', () => {
                 connectAudio(id, video);
                 detectAndApplyOrientation();
@@ -452,7 +453,19 @@
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'mv-loading';
             loadingDiv.innerHTML = '<div class="mv-spinner"></div>';
-            video.addEventListener('canplay', () => loadingDiv.remove(), { once: true });
+            video.addEventListener('canplay', () => {
+                loadingDiv.remove();
+                detectAndApplyOrientation();
+            }, { once: true });
+
+            // Final fallback: videoWidth/videoHeight are guaranteed non-zero during playback
+            const checkDims = () => {
+                if (video.videoWidth > 0) {
+                    video.removeEventListener('timeupdate', checkDims);
+                    detectAndApplyOrientation();
+                }
+            };
+            video.addEventListener('timeupdate', checkDims);
 
             const overlay = document.createElement('div');
             overlay.className = 'mv-cell-overlay';

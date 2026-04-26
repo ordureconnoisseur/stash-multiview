@@ -1,6 +1,6 @@
 name: Stash Multiview
 description: Queue scenes from browse pages and watch up to 9 simultaneously in a minimal grid layout.
-version: 1.1.0
+version: 1.2.0
 url: https://github.com/ordureconnoisseur/stash-multiview
 ui:
   assets:

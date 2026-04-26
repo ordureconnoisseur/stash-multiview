@@ -50,11 +50,21 @@ body:not(.mv-picking-mode) .mv-add-btn {
 
 /* ── Scene page button ─────────────────────────────────────────────────────── */
 
+.mv-scene-page-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .mv-scene-page-btn svg {
     width: 1em;
     height: 1em;
-    margin-right: 0.4em;
-    vertical-align: -0.125em;
+}
+
+.mv-scene-page-btn.active {
+    background-color: #f97316 !important;
+    border-color: #f97316 !important;
+    color: #fff !important;
 }
 
 /* ── Standalone picking toggle (shown when no pagination controls exist) ───── */

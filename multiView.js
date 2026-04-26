@@ -54,7 +54,7 @@
         saveQueue(q);
     }
 
-    // ── Pagination Toggle Button ──────────────────────────────────────────────
+    // ── Picking Toggle Button ─────────────────────────────────────────────────
 
     function createPickingToggleBtn() {
         const btn = document.createElement('button');
@@ -74,8 +74,26 @@
             return;
         }
 
-        const paginations = document.querySelectorAll('.pagination');
+        // Priority 1: append into the display-mode button group (last btn-group before the zoom slider)
+        const zoomSlider = document.querySelector('input[type="range"]');
+        if (zoomSlider) {
+            document.getElementById('mv-picking-standalone')?.remove();
+            const allGroups = [...document.querySelectorAll('.btn-group')];
+            const lastBtnGroup = allGroups.reverse().find(g =>
+                g.compareDocumentPosition(zoomSlider) & Node.DOCUMENT_POSITION_FOLLOWING
+            );
+            if (lastBtnGroup) {
+                if (!lastBtnGroup.querySelector('.mv-picking-toggle-btn')) {
+                    lastBtnGroup.appendChild(createPickingToggleBtn());
+                }
+            } else if (!zoomSlider.parentElement.querySelector('.mv-picking-toggle-btn')) {
+                zoomSlider.parentElement.insertBefore(createPickingToggleBtn(), zoomSlider);
+            }
+            return;
+        }
 
+        // Priority 2: pagination bar
+        const paginations = document.querySelectorAll('.pagination');
         if (paginations.length) {
             document.getElementById('mv-picking-standalone')?.remove();
             paginations.forEach(pagination => {
@@ -87,7 +105,7 @@
             return;
         }
 
-        // No pagination: show a standalone fixed button whenever scene cards are present
+        // Priority 3: standalone fixed button when scene cards are present
         if (!document.querySelector('.scene-card')) {
             document.getElementById('mv-picking-standalone')?.remove();
             return;
@@ -145,14 +163,13 @@
         btn.id = 'mv-scene-btn';
         btn.className = 'mv-scene-page-btn btn btn-secondary' + (isQueued(id) ? ' active' : '');
         btn.title = isQueued(id) ? 'Remove from Multiview' : 'Add to Multiview';
-        btn.innerHTML = GRID_ICON_SVG + '<span>' + (isQueued(id) ? 'In Queue' : 'Multiview') + '</span>';
+        btn.innerHTML = GRID_ICON_SVG;
 
         btn.addEventListener('click', () => {
             toggleScene(id);
             const queued = isQueued(id);
             btn.classList.toggle('active', queued);
             btn.title = queued ? 'Remove from Multiview' : 'Add to Multiview';
-            btn.querySelector('span').textContent = queued ? 'In Queue' : 'Multiview';
         });
 
         toolbar.appendChild(btn);
@@ -172,7 +189,7 @@
             if (m) {
                 const queued = isQueued(m[1]);
                 sceneBtn.classList.toggle('active', queued);
-                sceneBtn.querySelector('span').textContent = queued ? 'In Queue' : 'Multiview';
+                sceneBtn.title = queued ? 'Remove from Multiview' : 'Add to Multiview';
             }
         }
     }
