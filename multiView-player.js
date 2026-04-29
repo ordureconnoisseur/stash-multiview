@@ -114,30 +114,168 @@
         return s;
     }
 
+    // ── Settings ──────────────────────────────────────────────────────────────
+
+    const QUALITY_OPTIONS = [
+        { value: 'direct',   label: 'Direct Stream' },
+        { value: 'webm1080', label: '1080p (WebM)' },
+        { value: 'webm720',  label: '720p (WebM)'  },
+        { value: 'webm480',  label: '480p (WebM)'  },
+        { value: 'webm360',  label: '360p (WebM)'  },
+        { value: 'mp41080',  label: '1080p (MP4)'  },
+        { value: 'mp4720',   label: '720p (MP4)'   },
+        { value: 'mp4480',   label: '480p (MP4)'   },
+        { value: 'mp4360',   label: '360p (MP4)'   },
+    ];
+
+    const GRID_ROWS = [
+        { key: 1, label: '1 video'  },
+        { key: 2, label: '2 videos' },
+        { key: 4, label: '4 videos' },
+        { key: 6, label: '6 videos' },
+        { key: 9, label: '9 videos' },
+    ];
+
+    const DEFAULT_QUALITY = { 1: 'webm1080', 2: 'webm720', 4: 'webm720', 6: 'webm480', 9: 'webm480' };
+
+    function loadPlayerSettings(saved = {}) {
+        return {
+            directPlay: saved.directPlay ?? false,
+            quality: { ...DEFAULT_QUALITY, ...(saved.quality || {}) }
+        };
+    }
+
+    async function fetchPluginConfig() {
+        try {
+            const res = await fetch('/graphql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: '{ configuration { plugins } }' })
+            });
+            const data = await res.json();
+            return data?.data?.configuration?.plugins?.multiView || {};
+        } catch { return {}; }
+    }
+
+    let playerSettings = loadPlayerSettings();
+
+    function savePlayerSettings() {
+        fetch('/graphql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: 'mutation ConfigurePlugin($input: Map!) { configurePlugin(plugin_id: "multiView", input: $input) }',
+                variables: { input: playerSettings }
+            })
+        }).catch(() => {});
+    }
+
+    function openSettingsModal() {
+        if (document.getElementById('mv-settings-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'mv-settings-modal';
+
+        const card = document.createElement('div');
+        card.className = 'mv-settings-card';
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'mv-settings-header';
+        const titleEl = document.createElement('span');
+        titleEl.className = 'mv-settings-title';
+        titleEl.textContent = 'Player Settings';
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'mv-settings-close';
+        closeBtn.innerHTML = ICON_REMOVE;
+        closeBtn.title = 'Close';
+        closeBtn.addEventListener('click', closeSettingsModal);
+        header.append(titleEl, closeBtn);
+
+        // Direct play row
+        const dpRow = document.createElement('div');
+        dpRow.className = 'mv-settings-dp-row';
+        const dpText = document.createElement('div');
+        dpText.className = 'mv-settings-dp-text';
+        const dpLabel = document.createElement('span');
+        dpLabel.className = 'mv-settings-dp-label';
+        dpLabel.textContent = 'Direct Play';
+        const dpDesc = document.createElement('span');
+        dpDesc.className = 'mv-settings-dp-desc';
+        dpDesc.textContent = 'Stream the original file without transcoding. Recommended for NAS or low-powered servers.';
+        dpText.append(dpLabel, dpDesc);
+        const dpToggle = document.createElement('input');
+        dpToggle.type = 'checkbox';
+        dpToggle.className = 'mv-toggle';
+        dpToggle.checked = playerSettings.directPlay;
+        dpRow.append(dpText, dpToggle);
+
+        // Quality section
+        const qualSection = document.createElement('div');
+        qualSection.className = 'mv-settings-qual-section';
+        const qualHeading = document.createElement('span');
+        qualHeading.className = 'mv-settings-section-heading';
+        qualHeading.textContent = 'Quality per Grid Size';
+        qualSection.appendChild(qualHeading);
+
+        const selects = {};
+        GRID_ROWS.forEach(({ key, label }) => {
+            const row = document.createElement('div');
+            row.className = 'mv-settings-qual-row';
+            const lbl = document.createElement('label');
+            lbl.textContent = label;
+            const sel = document.createElement('select');
+            sel.className = 'mv-quality-select';
+            sel.disabled = playerSettings.directPlay;
+            QUALITY_OPTIONS.forEach(opt => {
+                const o = document.createElement('option');
+                o.value = opt.value;
+                o.textContent = opt.label;
+                if (opt.value === playerSettings.quality[key]) o.selected = true;
+                sel.appendChild(o);
+            });
+            sel.addEventListener('change', () => {
+                playerSettings.quality[key] = sel.value;
+                savePlayerSettings();
+            });
+            selects[key] = sel;
+            row.append(lbl, sel);
+            qualSection.appendChild(row);
+        });
+
+        dpToggle.addEventListener('change', () => {
+            playerSettings.directPlay = dpToggle.checked;
+            savePlayerSettings();
+            Object.values(selects).forEach(sel => { sel.disabled = dpToggle.checked; });
+        });
+
+        card.append(header, dpRow, qualSection);
+        overlay.appendChild(card);
+        overlay.addEventListener('click', e => { if (e.target === overlay) closeSettingsModal(); });
+        document.body.appendChild(overlay);
+    }
+
+    function closeSettingsModal() {
+        document.getElementById('mv-settings-modal')?.remove();
+    }
+
+    // ── Stream selection ───────────────────────────────────────────────────────
+
     function pickStream(id) {
         const s = scenes[id]?.streams;
         if (!s) return `/scene/${id}/stream`;
-        const count = queue.length;
-        
-        const res360  = s.webm360  || s.mp4360;
-        const res480  = s.webm480  || s.mp4480;
-        const res720  = s.webm720  || s.mp4720;
-        const res1080 = s.webm1080 || s.mp41080;
-        const direct  = s.direct   || `/scene/${id}/stream`;
+        const direct = s.direct || `/scene/${id}/stream`;
 
-        if (count >= 7) {
-            // 9-grid: Prefer 480p, then 360p, then 720p
-            return res480 || res360 || res720 || direct;
-        } else if (count >= 5) {
-            // 6-grid: Prefer 480p, then 720p, then 1080p
-            return res480 || res720 || res1080 || direct;
-        } else if (count >= 2) {
-            // 2-grid or 4-grid: Prefer 720p, then 480p, then 1080p
-            return res720 || res480 || res1080 || direct;
-        } else {
-            // 1-grid: Prefer 1080p, then 720p, then direct
-            return res1080 || res720 || direct;
-        }
+        if (playerSettings.directPlay) return direct;
+
+        const count = queue.length;
+        const gridKey = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 4 : count <= 6 ? 6 : 9;
+        const preferred = playerSettings.quality[gridKey] || 'webm720';
+
+        if (preferred === 'direct') return direct;
+
+        const res = preferred.replace(/^(webm|mp4)/, '');
+        return s[preferred] || s['webm' + res] || s['mp4' + res] || direct;
     }
 
     // ── GraphQL ───────────────────────────────────────────────────────────────
@@ -640,11 +778,15 @@
     // ── Init ──────────────────────────────────────────────────────────────────
 
     async function init() {
+        const pluginConfig = await fetchPluginConfig();
+        playerSettings = loadPlayerSettings(pluginConfig);
+
         queue = getQueue();
 
         document.getElementById('mv-playpause-all-btn').addEventListener('click', playPauseAll);
         document.getElementById('mv-mute-all-btn').addEventListener('click', toggleMuteAll);
         document.getElementById('mv-o-all-btn').addEventListener('click', incrementAllO);
+        document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
 
         document.addEventListener('mousemove', updateSeekFill);
         document.addEventListener('mouseup', () => { commitSeek(); activeSeek = null; });
