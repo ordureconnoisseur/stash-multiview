@@ -1,6 +1,6 @@
 # Multi-View Player
 
-A Stash plugin that lets you queue scenes from any browse page and watch up to 9 simultaneously in a minimal grid player.
+A Stash plugin that lets you queue scenes from any browse page and watch up to 12 simultaneously in a minimal grid player.
 
 ## Requirements
 
@@ -34,7 +34,7 @@ A Stash plugin that lets you queue scenes from any browse page and watch up to 9
 
 On any scene browse page, click the grid icon button in the toolbar (next to the view mode buttons, before the zoom slider) to enable **Picking Mode**. While active, each scene card shows a **+** button in the top-right corner. Click it to add that scene to your queue — the button turns orange and shows a **✓** to confirm it's queued.
 
-You can queue up to **9 scenes** at once.
+You can queue up to **12 scenes** at once.
 
 ![Picking Mode](screenshot-picking.png)
 
