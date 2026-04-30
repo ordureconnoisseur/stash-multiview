@@ -129,14 +129,15 @@
     ];
 
     const GRID_ROWS = [
-        { key: 1, label: '1 video'  },
-        { key: 2, label: '2 videos' },
-        { key: 4, label: '4 videos' },
-        { key: 6, label: '6 videos' },
-        { key: 9, label: '9 videos' },
+        { key: 1,  label: '1 video'   },
+        { key: 2,  label: '2 videos'  },
+        { key: 4,  label: '4 videos'  },
+        { key: 6,  label: '6 videos'  },
+        { key: 9,  label: '9 videos'  },
+        { key: 12, label: '12 videos' },
     ];
 
-    const DEFAULT_QUALITY = { 1: 'webm1080', 2: 'webm720', 4: 'webm720', 6: 'webm480', 9: 'webm480' };
+    const DEFAULT_QUALITY = { 1: 'webm1080', 2: 'webm720', 4: 'webm720', 6: 'webm480', 9: 'webm480', 12: 'webm360' };
 
     function loadPlayerSettings(saved = {}) {
         return {
@@ -269,7 +270,7 @@
         if (playerSettings.directPlay) return direct;
 
         const count = queue.length;
-        const gridKey = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 4 : count <= 6 ? 6 : 9;
+        const gridKey = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 4 : count <= 6 ? 6 : count <= 9 ? 9 : 12;
         const preferred = playerSettings.quality[gridKey] || 'webm720';
 
         if (preferred === 'direct') return direct;
@@ -347,7 +348,8 @@
         if (isPortrait && count === 3) return '3x1';
         if (count <= 4) return '2x2';
         if (count <= 6) return '3x2';
-        return '3x3';
+        if (count <= 9) return '3x3';
+        return '3x4';
     }
 
     function detectAndApplyOrientation() {
