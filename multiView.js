@@ -46,7 +46,7 @@
         const q = getQueue();
         const idx = q.indexOf(String(id));
         if (idx === -1) {
-            if (q.length >= 9) { alert('Maximum 9 scenes in the multiview queue.'); return; }
+            if (q.length >= 12) { alert('Maximum 12 scenes in the multiview queue.'); return; }
             q.push(String(id));
         } else {
             q.splice(idx, 1);
