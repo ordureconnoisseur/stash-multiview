@@ -710,3 +710,27 @@ html, body {
 }
 
 .mv-menu-roll-btn:hover { background: #ea6c10; }
+
+/* ── Focus mode ──────────────────────────────────────────────────────────── */
+
+body.mv-focus #mv-topbar {
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+body.mv-focus #mv-topbar:hover {
+    opacity: 1;
+}
+body.mv-focus #mv-grid {
+    top: 0;
+    display: block;
+    padding: 0;
+}
+body.mv-focus .mv-cell {
+    position: absolute;
+}
+body.mv-focus .mv-cell video {
+    object-fit: cover;
+}
+body.mv-focus .mv-seekbar {
+    display: none;
+}
