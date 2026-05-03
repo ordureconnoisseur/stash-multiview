@@ -50,12 +50,23 @@
     }
 
     function parseCurrentFilter() {
+        const path = window.location.pathname;
         const params = new URLSearchParams(window.location.search);
         const f = {};
+
+        // Entity-scoped scene pages
+        const performerMatch = path.match(/^\/performers\/(\d+)\/scenes/);
+        const tagMatch      = path.match(/^\/tags\/(\d+)\/scenes/);
+        const studioMatch   = path.match(/^\/studios\/(\d+)\/scenes/);
+        if (performerMatch) f.performerId = performerMatch[1];
+        if (tagMatch)       f.tagId       = tagMatch[1];
+        if (studioMatch)    f.studioId    = studioMatch[1];
+
+        // Query-string filters (scenes browse page)
         if (params.get('q')) f.q = params.get('q');
-        if (params.get('c')) f.c = params.get('c');
-        if (params.get('sortby')) f.sortby = params.get('sortby');
-        if (params.get('sortdir')) f.sortdir = params.get('sortdir');
+        const cParams = params.getAll('c');
+        if (cParams.length) f.c = cParams;
+
         return Object.keys(f).length ? f : null;
     }
 
