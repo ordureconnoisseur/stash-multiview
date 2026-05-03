@@ -524,56 +524,37 @@
         const n = aspectRatios.length;
         if (n === 0) return [];
 
-        // Snap to exact standard ratios — avoids weird sub-pixel aspect classes
         const snapped = aspectRatios.map(a => a >= 1 ? 16 / 9 : 9 / 16);
         const totalAspectSum = snapped.reduce((s, a) => s + a, 0);
-        const targetHeight = Math.sqrt((containerWidth * containerHeight) / totalAspectSum);
 
-        // Greedy row packing
+        // Derive the ideal row count from the container's aspect ratio and total content width.
+        // This avoids the greedy+merge approach which can collapse items into a single distorted row.
+        const numRows = Math.max(1, Math.round(Math.sqrt(totalAspectSum * containerHeight / containerWidth)));
+        const targetPerRow = totalAspectSum / numRows;
+
+        // Distribute items into numRows rows by aspect-sum equalization.
+        // Start a new row when adding the next item would overshoot the target more than the current undershoot.
         const rows = [];
-        let rowStart = 0;
-        while (rowStart < n) {
-            let rowEnd = rowStart, rowAspectSum = 0;
-            while (rowEnd < n) {
-                const tentative = rowAspectSum + snapped[rowEnd];
-                const naturalWidth = tentative * targetHeight + (rowEnd - rowStart) * gap;
-                if (rowEnd > rowStart && naturalWidth > containerWidth) break;
-                rowAspectSum += snapped[rowEnd];
-                rowEnd++;
+        let cur = { start: 0, end: 0, aspectSum: 0 };
+        for (let i = 0; i < n; i++) {
+            const withItem = cur.aspectSum + snapped[i];
+            if (rows.length < numRows - 1 && cur.end > cur.start &&
+                withItem - targetPerRow > targetPerRow - cur.aspectSum) {
+                rows.push(cur);
+                cur = { start: i, end: i, aspectSum: 0 };
             }
-            rows.push({ start: rowStart, end: rowEnd, aspectSum: rowAspectSum });
-            rowStart = rowEnd;
+            cur.aspectSum += snapped[i];
+            cur.end = i + 1;
         }
+        rows.push(cur);
 
-        // Merge single-item rows into a neighbour — solo cells after scaling become very distorted
-        if (rows.length > 1) {
-            for (let r = rows.length - 1; r >= 0; r--) {
-                if (rows[r].end - rows[r].start === 1 && rows.length > 1) {
-                    if (r < rows.length - 1) {
-                        rows[r].end = rows[r + 1].end;
-                        rows[r].aspectSum += rows[r + 1].aspectSum;
-                        rows.splice(r + 1, 1);
-                    } else {
-                        rows[r - 1].end = rows[r].end;
-                        rows[r - 1].aspectSum += rows[r].aspectSum;
-                        rows.splice(r, 1);
-                    }
-                }
-            }
-        }
-
-        // Natural height per row: cells fill containerWidth at exact snapped aspect ratios
+        // Natural height per row and scale to fill containerHeight
         rows.forEach(row => {
             row.naturalH = (containerWidth - gap * (row.end - row.start - 1)) / row.aspectSum;
         });
-
-        // Scale all rows to fill containerHeight exactly
-        const totalNaturalH = rows.reduce((s, r) => s + r.naturalH, 0) + gap * (rows.length - 1);
+        const totalNaturalH = rows.reduce((s, row) => s + row.naturalH, 0) + gap * (rows.length - 1);
         const scale = containerHeight / totalNaturalH;
 
-        // Compute positions.
-        // Widths use naturalH (proportional across all cells, no last-cell distortion spike).
-        // Only the last cell absorbs the ±1–2 px integer rounding remainder.
         const positions = [];
         let top = 0;
         for (let r = 0; r < rows.length; r++) {
@@ -730,7 +711,7 @@
             }
             
             video.src = baseSrc + sep + 'start=' + targetTime;
-            if (wasPlaying || video.autoplay) video.play();
+            if (wasPlaying || video.autoplay) video.play().catch(() => {});
         } else {
             video.currentTime = targetTime;
         }
