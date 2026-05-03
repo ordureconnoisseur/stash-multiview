@@ -83,12 +83,25 @@ The queue is shared across tabs — changes on one tab are immediately reflected
 | Pause All (top bar) | Play / pause all scenes simultaneously |
 | Dice button (top bar) | Open roulette — load N random scenes |
 | Settings (top bar) | Quality and display preferences |
+| `F` key | Toggle Focus Mode (justified layout, hidden UI) |
 
 The cell with active audio is highlighted with an orange outline.
+
+### Focus Mode
+
+Press **F** to toggle Focus Mode. In focus mode:
+
+- The top bar fades out (hover to reveal it)
+- Seek bars are hidden
+- Videos tile edge-to-edge using a justified layout — each cell is sized to its native aspect ratio (16:9 landscape or 9:16 portrait) so no space is wasted and cropping is minimised
+
+Press **F** again to return to the normal grid.
 
 ### Keyboard Shortcuts
 
 | Key | Action |
 |---|---|
 | `Space` | Play / pause all |
+| `P` | Play / pause all |
 | `M` | Mute / unmute all |
+| `F` | Toggle Focus Mode |
