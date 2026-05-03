@@ -25,6 +25,7 @@
             btn.title = getPickingMode() ? 'Disable Multiview Picking Mode' : 'Enable Multiview Picking Mode';
         });
         updateLauncher();
+        injectFilterBtn();
     }
 
     function getQueue() {
@@ -36,6 +37,43 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
         updateAllButtons();
         updateLauncher();
+        const filterBtn = document.getElementById('mv-filter-add-btn');
+        if (filterBtn) updateFilterBtn(filterBtn);
+    }
+
+    function getSceneCount() {
+        return getQueue().filter(item => typeof item === 'string').length;
+    }
+
+    function getFilterCount() {
+        return getQueue().filter(item => typeof item === 'object' && item !== null).length;
+    }
+
+    function parseCurrentFilter() {
+        const params = new URLSearchParams(window.location.search);
+        const f = {};
+        if (params.get('q')) f.q = params.get('q');
+        if (params.get('c')) f.c = params.get('c');
+        if (params.get('sortby')) f.sortby = params.get('sortby');
+        if (params.get('sortdir')) f.sortdir = params.get('sortdir');
+        return Object.keys(f).length ? f : null;
+    }
+
+    function countCurrentFilterSlots() {
+        const f = parseCurrentFilter();
+        if (!f) return 0;
+        const key = JSON.stringify(f);
+        return getQueue().filter(item =>
+            typeof item === 'object' && item !== null && JSON.stringify(item.filter) === key
+        ).length;
+    }
+
+    function addFilterSlot() {
+        const f = parseCurrentFilter();
+        if (!f) return;
+        const q = getQueue();
+        q.push({ type: 'filter', filter: f });
+        saveQueue(q);
     }
 
     function isQueued(id) {
@@ -46,7 +84,7 @@
         const q = getQueue();
         const idx = q.indexOf(String(id));
         if (idx === -1) {
-            if (q.length >= 12) { alert('Maximum 12 scenes in the multiview queue.'); return; }
+            if (q.length >= 12) { alert('Maximum 12 items in the multiview queue.'); return; }
             q.push(String(id));
         } else {
             q.splice(idx, 1);
@@ -54,7 +92,7 @@
         saveQueue(q);
     }
 
-    // ── Picking Toggle Button ─────────────────────────────────────────────────
+    // ?"??"? Picking Toggle Button ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
     function createPickingToggleBtn() {
         const btn = document.createElement('button');
@@ -117,7 +155,7 @@
         document.body.appendChild(btn);
     }
 
-    // ── Card buttons ──────────────────────────────────────────────────────────
+    // ?"??"? Card buttons ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
     function injectCardButtons() {
         document.querySelectorAll('.scene-card').forEach(card => {
@@ -133,13 +171,13 @@
             btn.className = 'mv-add-btn' + (isQueued(id) ? ' mv-queued' : '');
             btn.dataset.sceneId = id;
             btn.title = 'Add to Multiview';
-            btn.textContent = isQueued(id) ? '✓' : '+';
+            btn.innerHTML = isQueued(id) ? '&#x2713;' : '+';
 
             btn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 toggleScene(id);
-                btn.textContent = isQueued(id) ? '✓' : '+';
+                btn.innerHTML = isQueued(id) ? '&#x2713;' : '+';
                 btn.classList.toggle('mv-queued', isQueued(id));
             });
 
@@ -148,7 +186,7 @@
         });
     }
 
-    // ── Scene detail page button ──────────────────────────────────────────────
+    // ?"??"? Scene detail page button ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
     function injectScenePageButton() {
         const match = window.location.pathname.match(/^\/scenes\/(\d+)/);
@@ -175,12 +213,12 @@
         toolbar.appendChild(btn);
     }
 
-    // ── Update all existing card buttons ──────────────────────────────────────
+    // ?"??"? Update all existing card buttons ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
     function updateAllButtons() {
         document.querySelectorAll('.mv-add-btn').forEach(btn => {
             const queued = isQueued(btn.dataset.sceneId);
-            btn.textContent = queued ? '✓' : '+';
+            btn.innerHTML = queued ? '&#x2713;' : '+';
             btn.classList.toggle('mv-queued', queued);
         });
         const sceneBtn = document.getElementById('mv-scene-btn');
@@ -194,23 +232,21 @@
         }
     }
 
-    // ── Floating launcher ─────────────────────────────────────────────────────
+    // ?"??"? Floating launcher ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
     function updateLauncher() {
-        const q = getQueue();
         let el = document.getElementById('mv-launcher');
 
-        if (q.length === 0 || !getPickingMode()) { if (el) el.remove(); return; }
+        if (!getPickingMode()) { if (el) el.remove(); return; }
 
         if (!el) {
             el = document.createElement('div');
             el.id = 'mv-launcher';
             el.innerHTML = `
-                <button id="mv-open-btn" title="Open Multiview">
-                    <span id="mv-queue-count"></span>
-                    Open Multiview
-                </button>
-                <button id="mv-clear-queue" title="Clear queue">✕</button>
+                <button id="mv-open-btn" title="Open Multiview">${GRID_ICON_SVG}</button>
+                <span id="mv-scene-count" class="mv-launcher-count"></span>
+                <span id="mv-filter-count" class="mv-launcher-count mv-launcher-filter-count"></span>
+                <button id="mv-clear-queue" title="Clear queue">&times;</button>
             `;
             document.body.appendChild(el);
             document.getElementById('mv-open-btn').addEventListener('click', () => {
@@ -219,14 +255,84 @@
             document.getElementById('mv-clear-queue').addEventListener('click', () => saveQueue([]));
         }
 
-        document.getElementById('mv-queue-count').textContent = q.length;
+        const sceneCount = getSceneCount();
+        const filterCount = getFilterCount();
+        const total = sceneCount + filterCount;
+
+        const sceneEl = document.getElementById('mv-scene-count');
+        const filterEl = document.getElementById('mv-filter-count');
+        const clearBtn = document.getElementById('mv-clear-queue');
+
+        sceneEl.textContent = sceneCount;
+        sceneEl.style.display = sceneCount ? '' : 'none';
+        filterEl.textContent = filterCount;
+        filterEl.style.display = filterCount ? '' : 'none';
+        clearBtn.style.display = total ? '' : 'none';
     }
 
-    // ── SVG icon ──────────────────────────────────────────────────────────────
+    // ?"??"? Filter add button ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
+
+    function updateFilterBtn(btn) {
+        const count = countCurrentFilterSlots();
+        const badge = count > 0 ? `<span class="mv-filter-badge">${count}</span>` : '';
+        btn.innerHTML = PLUS_ICON_SVG + badge;
+        btn.title = count > 0
+            ? `Add another slot for this filter (${count} already queued)`
+            : 'Add current search as filter card';
+        btn.classList.toggle('mv-filter-has-slots', count > 0);
+    }
+
+    function injectFilterBtn() {
+        if (window.location.pathname.match(/^\/scenes\/\d+/) || !getPickingMode()) {
+            document.getElementById('mv-filter-add-btn')?.remove();
+            return;
+        }
+
+        if (document.getElementById('mv-filter-add-btn')) {
+            updateFilterBtn(document.getElementById('mv-filter-add-btn'));
+            return;
+        }
+
+        // Find insertion point: prefer Stash's filter toolbar btn-group, then filter button, then picking toggle
+        const toolbarGroup = document.querySelector('.filtered-list-toolbar .btn-group');
+        const filterBtn = document.querySelector('button.filter-button');
+        const pickingToggle = document.querySelector('.mv-picking-toggle-btn');
+
+        let container, insertRef;
+        if (toolbarGroup) {
+            container = toolbarGroup;
+            insertRef = null; // appendChild
+        } else if (filterBtn) {
+            container = filterBtn.parentElement;
+            insertRef = filterBtn.nextSibling;
+        } else if (pickingToggle) {
+            container = pickingToggle.parentElement;
+            insertRef = pickingToggle.nextSibling;
+        } else {
+            return;
+        }
+
+        const btn = document.createElement('button');
+        btn.id = 'mv-filter-add-btn';
+        btn.className = 'btn btn-secondary mv-filter-add-btn';
+        btn.type = 'button';
+        updateFilterBtn(btn);
+        btn.addEventListener('click', e => {
+            e.preventDefault();
+            addFilterSlot();
+        });
+
+        container.insertBefore(btn, insertRef);
+    }
+
+    // ?"??"? SVG icon ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
     const GRID_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg>`;
 
-    // ── Init & navigation ─────────────────────────────────────────────────────
+    const PLUS_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 448 512" fill="currentColor" aria-hidden="true"><path d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32V224H48c-17.7 0-32 14.3-32 32s14.3 32 32 32H192V432c0 17.7 14.3 32 32 32s32-14.3 32-32V288H400c17.7 0 32-14.3 32-32s-14.3-32-32-32H256V80z"/></svg>`;
+
+
+    // ?"??"? Init & navigation ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
     let injectDebounce = null;
     const observer = new MutationObserver(() => {
@@ -234,6 +340,8 @@
         injectDebounce = setTimeout(() => {
             injectCardButtons();
             injectPickingModeToggle();
+            injectFilterBtn();
+            injectScenePageButton();
         }, 150);
     });
     observer.observe(document.body, { childList: true, subtree: true });
@@ -244,6 +352,7 @@
             injectPickingModeToggle();
             injectCardButtons();
             injectScenePageButton();
+            injectFilterBtn();
             updateAllButtons();
             updateLauncher();
         }, 400);
@@ -251,7 +360,12 @@
 
     // Sync queue badge if player tab removes scenes
     window.addEventListener('storage', e => {
-        if (e.key === STORAGE_KEY) { updateAllButtons(); updateLauncher(); }
+        if (e.key === STORAGE_KEY) {
+            updateAllButtons();
+            updateLauncher();
+            const filterBtn = document.getElementById('mv-filter-add-btn');
+            if (filterBtn) updateFilterBtn(filterBtn);
+        }
     });
 
     if (typeof PluginApi !== 'undefined' && PluginApi?.Event?.addEventListener) {
@@ -260,3 +374,4 @@
 
     onNavigate();
 })();
+

@@ -92,10 +92,10 @@ body:not(.mv-picking-mode) .mv-add-btn {
     z-index: 9999;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     background: #1a1a1a;
     border: 1px solid #333;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 6px 8px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
@@ -103,16 +103,16 @@ body:not(.mv-picking-mode) .mv-add-btn {
 #mv-open-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
     background: #f97316;
     color: #fff;
     border: none;
     border-radius: 6px;
-    padding: 6px 12px;
-    font-size: 13px;
-    font-weight: 600;
+    width: 30px;
+    height: 30px;
+    padding: 0;
     cursor: pointer;
-    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 #mv-open-btn:hover {
@@ -120,36 +120,81 @@ body:not(.mv-picking-mode) .mv-add-btn {
 }
 
 #mv-open-btn svg {
-    width: 14px;
-    height: 14px;
-    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
 }
 
-#mv-queue-count {
+.mv-launcher-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 4px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 4px;
-    font-size: 11px;
+    border-radius: 5px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0 8px;
+    font-size: 14px;
     font-weight: 700;
+    background: #2a2a2a;
+    color: #ccc;
+}
+
+.mv-launcher-filter-count {
+    background: rgba(249, 115, 22, 0.2);
+    color: #f97316;
 }
 
 #mv-clear-queue {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
-    color: #888;
+    color: #666;
     border: none;
-    padding: 4px 6px;
-    font-size: 14px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 16px;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 5px;
     line-height: 1;
 }
 
 #mv-clear-queue:hover {
     color: #fff;
     background: #333;
+}
+
+/* ── Filter add button ─────────────────────────────────────────────────────── */
+
+body:not(.mv-picking-mode) .mv-filter-add-btn {
+    display: none !important;
+}
+
+.mv-filter-add-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mv-filter-add-btn svg {
+    width: 14px;
+    height: 14px;
+    vertical-align: -0.125em;
+}
+
+.mv-filter-add-btn.mv-filter-has-slots {
+    background-color: #f97316 !important;
+    border-color: #f97316 !important;
+    color: #fff !important;
+}
+
+.mv-filter-badge {
+    position: absolute;
+    top: 1px;
+    right: 2px;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
 }
