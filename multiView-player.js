@@ -2,6 +2,7 @@
     'use strict';
 
     const STORAGE_KEY = 'stash-multiview-queue';
+    const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
 
     // ── SVGs ──────────────────────────────────────────────────────────────────
 
@@ -14,7 +15,9 @@
     const ICON_PLAY  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" aria-hidden="true"><path fill="currentColor" d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9S58.2 482 73 473l288-176c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg>`;
     const ICON_PAUSE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" aria-hidden="true"><path fill="currentColor" d="M48 64C21.5 64 0 85.5 0 112V400c0 26.5 21.5 48 48 48H80c26.5 0 48-21.5 48-48V112c0-26.5-21.5-48-48-48H48zm192 0c-26.5 0-48 21.5-48 48V400c0 26.5 21.5 48 48 48h32c26.5 0 48-21.5 48-48V112c0-26.5-21.5-48-48-48H240z"/></svg>`;
     const ICON_SWEAT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" aria-hidden="true"><path fill="currentColor" d="M22.855.758L7.875 7.024l12.537 9.733c2.633 2.224 6.377 2.937 9.77 1.518c4.826-2.018 7.096-7.576 5.072-12.413C33.232 1.024 27.68-1.261 22.855.758zm-9.962 17.924L2.05 10.284L.137 23.529a7.993 7.993 0 0 0 2.958 7.803a8.001 8.001 0 0 0 9.798-12.65zm15.339 7.015l-8.156-4.69l-.033 9.223c-.088 2 .904 3.98 2.75 5.041a5.462 5.462 0 0 0 7.479-2.051c1.499-2.644.589-6.013-2.04-7.523z"/></svg>`;
-
+    const ICON_DICE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M13.763,0 L2.178,0 C0.998,0 0.043,0.966 0.043,2.155 L0.043,13.845 C0.043,15.034 0.998,15.999 2.178,15.999 L13.763,15.999 C14.944,15.999 15.899,15.034 15.899,13.845 L15.899,2.155 C15.898,0.966 14.943,0 13.763,0 Z M4.002,6.153 C2.856,6.153 1.927,5.202 1.927,4.03 C1.927,2.858 2.856,1.907 4.002,1.907 C5.148,1.907 6.078,2.858 6.078,4.03 C6.078,5.202 5.148,6.153 4.002,6.153 Z M12.002,14.153 C10.856,14.153 9.927,13.202 9.927,12.03 C9.927,10.858 10.856,9.907 12.002,9.907 C13.148,9.907 14.078,10.858 14.078,12.03 C14.078,13.202 13.148,14.153 12.002,14.153 Z M8.002,10.153 C6.856,10.153 5.927,9.202 5.927,8.03 C5.927,6.858 6.856,5.907 8.002,5.907 C9.148,5.907 10.078,6.858 10.078,8.03 C10.078,9.202 9.148,10.153 8.002,10.153 Z"/></svg>`;
+    const ICON_PREV = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" aria-hidden="true"><path fill="currentColor" d="M267.5 440.6c9.5 7.9 22.8 9.7 34.1 4.4s18.4-16.6 18.4-29V96c0-12.4-7.2-23.7-18.4-29s-24.5-3.4-34.1 4.4l-192 160L64 241V96c0-17.7-14.3-32-32-32S0 78.3 0 96V416c0 17.7 14.3 32 32 32s32-14.3 32-32V271l11.5 9.6 192 160z"/></svg>`;
+    const ICON_NEXT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" aria-hidden="true"><path fill="currentColor" d="M52.5 440.6c-9.5 7.9-22.8 9.7-34.1 4.4S0 428.4 0 416V96C0 83.6 7.2 72.3 18.4 67s24.5-3.4 34.1 4.4l192 160L256 241V96c0-17.7 14.3-32 32-32s32 14.3 32 32V416c0 17.7-14.3 32-32 32s-32-14.3-32-32V271l-11.5 9.6-192 160z"/></svg>`;
     // ── State ─────────────────────────────────────────────────────────────────
 
     let queue = [];
@@ -22,6 +25,7 @@
     const unmutedIds = new Set();
     let openPopupId = null;
     const seekBases = new Map(); // id → seconds already consumed before current src load
+    const filterBackedCells = new Map(); // resolved sceneId → original filter item
 
     // ── Web Audio ─────────────────────────────────────────────────────────────
 
@@ -77,14 +81,82 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
     }
 
+    async function resolveFilterSlot(item, excludeId = null) {
+        try {
+            const f = item.filter || {};
+            const res = await fetch('/graphql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: `query($filter: FindFilterType) { findScenes(filter: $filter) { scenes { id } } }`,
+                    variables: { filter: { per_page: excludeId ? 3 : 1, sort: 'random', q: f.q || '' } }
+                })
+            });
+            const data = await res.json();
+            const list = data?.data?.findScenes?.scenes || [];
+            const pick = excludeId ? (list.find(s => String(s.id) !== excludeId) || list[0]) : list[0];
+            return pick ? String(pick.id) : null;
+        } catch { return null; }
+    }
+
+    async function resolveQueue(rawQueue) {
+        filterBackedCells.clear();
+        const resolved = await Promise.all(
+            rawQueue.map(async item => {
+                if (typeof item === 'string') return item;
+                const id = await resolveFilterSlot(item);
+                if (id) filterBackedCells.set(id, item);
+                return id;
+            })
+        );
+        return resolved.filter(Boolean);
+    }
+
     function removeScene(id) {
-        const q = getQueue().filter(x => x !== String(id));
-        saveQueue(q);
-        queue = q;
+        const idx = queue.indexOf(String(id));
+        if (idx === -1) return;
+        queue.splice(idx, 1);
+        const raw = getQueue();
+        if (idx < raw.length) raw.splice(idx, 1);
+        saveQueue(raw);
         unmutedIds.delete(String(id));
+        filterBackedCells.delete(String(id));
         disconnectAudio(id);
         seekBases.delete(id);
         render();
+    }
+
+    async function advanceFilterCell(id) {
+        const filterItem = filterBackedCells.get(id);
+        if (!filterItem) return;
+        const newId = await resolveFilterSlot(filterItem, id);
+        if (!newId || newId === id) {
+            const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
+            const video = cell?.querySelector('video');
+            if (video) seekToStart(id, video);
+            return;
+        }
+        filterBackedCells.delete(id);
+        filterBackedCells.set(newId, filterItem);
+        if (unmutedIds.has(id)) { unmutedIds.delete(id); unmutedIds.add(newId); }
+        const qIdx = queue.indexOf(id);
+        if (qIdx !== -1) queue[qIdx] = newId;
+        await loadSceneMeta([newId]);
+        render();
+    }
+
+    function seekToStart(id, video) {
+        const src = video.getAttribute('src');
+        const isTranscode = src && (src.includes('.webm') || src.includes('.mp4'));
+        const wasPlaying = !video.paused;
+        if (isTranscode) {
+            const baseSrc = src.split(/[?&]start=/)[0];
+            seekBases.set(id, 0);
+            video.src = baseSrc;
+        } else {
+            video.currentTime = 0;
+        }
+        if (wasPlaying || video.autoplay) video.play();
     }
 
     // ── Stream selection ──────────────────────────────────────────────────────
@@ -313,7 +385,7 @@
     }
 
     async function loadSceneMeta(ids) {
-        await Promise.all(ids.filter(id => !scenes[id]).map(fetchSceneMeta));
+        await Promise.all(ids.filter(id => typeof id === 'string' && !scenes[id]).map(fetchSceneMeta));
     }
 
     async function incrementO(id) {
@@ -426,7 +498,7 @@
         if (unmutedIds.size > 0) {
             unmutedIds.clear();
         } else {
-            queue.forEach(id => unmutedIds.add(id));
+            queue.forEach(id => typeof id === 'string' && unmutedIds.add(id));
         }
         document.querySelectorAll('.mv-cell').forEach(applyAudioCell);
         updateMuteAllBtn();
@@ -522,68 +594,27 @@
         // Correct layout immediately if videos already have dimensions (re-render case)
         detectAndApplyOrientation();
 
-        // Remove cells no longer in queue, and update quality for existing ones
-        grid.querySelectorAll('.mv-cell').forEach(cell => {
-            const id = cell.dataset.sceneId;
-            if (!queue.includes(id)) {
-                cell.remove();
-                return;
-            }
-
-            const video = cell.querySelector('video');
-            if (!video) return;
-
-            const optimalSrc = pickStream(id);
-            const currentSrc = video.getAttribute('src') || '';
-            const baseSrc = currentSrc.split(/[?&]start=/)[0];
-
-            if (baseSrc && baseSrc !== optimalSrc) {
-                let currentTime = video.currentTime;
-                if (currentSrc.match(/[?&]start=/)) {
-                    currentTime += (seekBases.get(id) || 0);
-                }
-
-                const wasPlaying = !video.paused;
-                const isTranscode = optimalSrc.includes('.webm') || optimalSrc.includes('.mp4');
-
-                if (!cell.querySelector('.mv-loading')) {
-                    const s = document.createElement('div');
-                    s.className = 'mv-loading';
-                    s.innerHTML = '<div class="mv-spinner"></div>';
-                    cell.appendChild(s);
-                }
-
-                if (isTranscode && currentTime > 0) {
-                    const sep = optimalSrc.includes('?') ? '&' : '?';
-                    seekBases.set(id, currentTime);
-                    video.src = optimalSrc + sep + 'start=' + currentTime;
-                } else {
-                    seekBases.set(id, 0);
-                    video.src = optimalSrc;
-                    const onMeta = () => {
-                        if (currentTime > 0) video.currentTime = currentTime;
-                        video.removeEventListener('loadedmetadata', onMeta);
-                    };
-                    video.addEventListener('loadedmetadata', onMeta);
-                }
-                if (wasPlaying || video.autoplay) video.play();
-            }
-        });
-
-        // Add new cells
-        queue.forEach(id => {
+        // Add new cells at their correct queue position (before removal to avoid layout flash)
+        queue.forEach((id, idx) => {
+            if (typeof id !== 'string') return;
             if (grid.querySelector(`.mv-cell[data-scene-id="${id}"]`)) return;
 
             const cell = document.createElement('div');
-            cell.className = 'mv-cell';
+            const isFilterBacked = filterBackedCells.has(id);
+            cell.className = 'mv-cell' + (isFilterBacked ? ' mv-cell--filter' : '');
             cell.dataset.sceneId = id;
+
 
             const video = document.createElement('video');
             video.src = pickStream(id);
             video.autoplay = true;
-            video.loop = true;
+            video.loop = !isFilterBacked;
             video.muted = !unmutedIds.has(id);
             video.playsInline = true;
+
+            if (isFilterBacked) {
+                video.addEventListener('ended', () => advanceFilterCell(id));
+            }
 
             video.addEventListener('loadedmetadata', () => {
                 connectAudio(id, video);
@@ -615,7 +646,16 @@
             sceneTitleEl.href = `/scenes/${id}`;
             sceneTitleEl.target = '_blank';
             sceneTitleEl.rel = 'noopener';
-            sceneTitleEl.textContent = scenes[id]?.title || id;
+            if (isFilterBacked) {
+                const hasConstraints = Object.keys(filterBackedCells.get(id)?.filter || {}).length > 0;
+                const label = document.createElement('span');
+                label.className = 'mv-filter-label';
+                label.textContent = hasConstraints ? 'Filter: ' : 'Random: ';
+                sceneTitleEl.appendChild(label);
+                sceneTitleEl.appendChild(document.createTextNode(scenes[id]?.title || id));
+            } else {
+                sceneTitleEl.textContent = scenes[id]?.title || id;
+            }
             sceneTitleEl.addEventListener('click', e => e.stopPropagation());
 
             // Controls row
@@ -669,8 +709,31 @@
                 incrementO(id);
             });
 
+            const prevBtn = document.createElement('button');
+            prevBtn.className = 'mv-cell-skip-btn mv-cell-prev';
+            prevBtn.innerHTML = ICON_PREV;
+            prevBtn.title = 'Restart video';
+            prevBtn.addEventListener('click', e => {
+                e.stopPropagation();
+                seekToStart(id, video);
+            });
+
+            const nextBtn = document.createElement('button');
+            nextBtn.className = 'mv-cell-skip-btn mv-cell-next';
+            nextBtn.innerHTML = ICON_NEXT;
+            nextBtn.title = isFilterBacked ? 'Next video' : 'Restart video';
+            nextBtn.addEventListener('click', e => {
+                e.stopPropagation();
+                if (isFilterBacked) advanceFilterCell(id);
+                else seekToStart(id, video);
+            });
+
+            const centerControls = document.createElement('div');
+            centerControls.className = 'mv-cell-center-controls';
+            centerControls.append(prevBtn, playPauseBtn, nextBtn);
+
             controls.append(oBtn, audioBtn, removeBtn);
-            overlay.append(sceneTitleEl, playPauseBtn, controls);
+            overlay.append(sceneTitleEl, centerControls, controls);
 
             // Volume popup (direct child of cell, not overlay)
             const popup = document.createElement('div');
@@ -765,7 +828,63 @@
 
             if (unmutedIds.has(id)) cell.classList.add('audio-active');
 
-            grid.appendChild(cell);
+            // Insert at correct queue position instead of appending to end
+            let refCell = null;
+            for (let i = idx + 1; i < queue.length; i++) {
+                const nextId = queue[i];
+                if (typeof nextId !== 'string') continue;
+                const next = grid.querySelector(`.mv-cell[data-scene-id="${nextId}"]`);
+                if (next) { refCell = next; break; }
+            }
+            grid.insertBefore(cell, refCell);
+        });
+
+        // Remove cells no longer in queue, and update quality for existing ones
+        grid.querySelectorAll('.mv-cell').forEach(cell => {
+            const id = cell.dataset.sceneId;
+            if (!queue.includes(id)) {
+                cell.remove();
+                return;
+            }
+
+            const video = cell.querySelector('video');
+            if (!video) return;
+
+            const optimalSrc = pickStream(id);
+            const currentSrc = video.getAttribute('src') || '';
+            const baseSrc = currentSrc.split(/[?&]start=/)[0];
+
+            if (baseSrc && baseSrc !== optimalSrc) {
+                let currentTime = video.currentTime;
+                if (currentSrc.match(/[?&]start=/)) {
+                    currentTime += (seekBases.get(id) || 0);
+                }
+
+                const wasPlaying = !video.paused;
+                const isTranscode = optimalSrc.includes('.webm') || optimalSrc.includes('.mp4');
+
+                if (!cell.querySelector('.mv-loading')) {
+                    const s = document.createElement('div');
+                    s.className = 'mv-loading';
+                    s.innerHTML = '<div class="mv-spinner"></div>';
+                    cell.appendChild(s);
+                }
+
+                if (isTranscode && currentTime > 0) {
+                    const sep = optimalSrc.includes('?') ? '&' : '?';
+                    seekBases.set(id, currentTime);
+                    video.src = optimalSrc + sep + 'start=' + currentTime;
+                } else {
+                    seekBases.set(id, 0);
+                    video.src = optimalSrc;
+                    const onMeta = () => {
+                        if (currentTime > 0) video.currentTime = currentTime;
+                        video.removeEventListener('loadedmetadata', onMeta);
+                    };
+                    video.addEventListener('loadedmetadata', onMeta);
+                }
+                if (wasPlaying || video.autoplay) video.play();
+            }
         });
     }
 
@@ -773,9 +892,102 @@
 
     window.addEventListener('storage', e => {
         if (e.key !== STORAGE_KEY) return;
-        queue = getQueue();
-        loadSceneMeta(queue).then(render);
+        resolveQueue(getQueue()).then(resolved => {
+            queue = resolved;
+            loadSceneMeta(queue).then(render);
+        });
     });
+
+    // ── Roulette ──────────────────────────────────────────────────────────────
+
+    async function loadRoulette(count) {
+        try {
+            const res = await fetch('/graphql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: `query { findScenes(filter: { per_page: ${count}, sort: "random" }) { scenes { id } } }`
+                })
+            });
+            const data = await res.json();
+            const ids = (data?.data?.findScenes?.scenes || []).map(s => String(s.id));
+            if (!ids.length) return;
+            // Save as filter slots so reopening the player loads fresh random scenes
+            const rouletteSlots = Array.from({ length: ids.length }, () => ({ type: 'filter', filter: {} }));
+            saveQueue(rouletteSlots);
+            // In-memory: use already-fetched IDs, registered as filter-backed for auto-advance
+            filterBackedCells.clear();
+            const rouletteFilter = { type: 'filter', filter: {} };
+            ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
+            queue = ids;
+            await loadSceneMeta(ids);
+            render();
+        } catch {}
+    }
+
+    // ── Menu panel ────────────────────────────────────────────────────────────
+
+    function openMenuPanel() {
+        if (document.getElementById('mv-menu-panel')) { closeMenuPanel(); return; }
+
+        const savedCount = parseInt(localStorage.getItem(ROULETTE_COUNT_KEY) || '4');
+
+        const panel = document.createElement('div');
+        panel.id = 'mv-menu-panel';
+
+        const rouletteSection = document.createElement('div');
+        rouletteSection.className = 'mv-menu-section';
+
+        const heading = document.createElement('span');
+        heading.className = 'mv-menu-heading';
+        heading.textContent = 'Roulette';
+
+        const sliderRow = document.createElement('div');
+        sliderRow.className = 'mv-menu-slider-row';
+
+        const countDisplay = document.createElement('span');
+        countDisplay.className = 'mv-menu-count';
+        countDisplay.textContent = savedCount;
+
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.className = 'mv-menu-slider';
+        slider.min = 1;
+        slider.max = 12;
+        slider.value = savedCount;
+        slider.addEventListener('input', () => { countDisplay.textContent = slider.value; });
+
+        sliderRow.append(countDisplay, slider);
+
+        const rollBtn = document.createElement('button');
+        rollBtn.className = 'mv-menu-roll-btn';
+        rollBtn.textContent = 'Roll';
+        rollBtn.addEventListener('click', () => {
+            const count = parseInt(slider.value);
+            localStorage.setItem(ROULETTE_COUNT_KEY, count);
+            closeMenuPanel();
+            loadRoulette(count);
+        });
+
+        rouletteSection.append(heading, sliderRow, rollBtn);
+        panel.appendChild(rouletteSection);
+        document.body.appendChild(panel);
+
+        setTimeout(() => {
+            document.addEventListener('mousedown', onMenuOutsideClick);
+        }, 0);
+    }
+
+    function closeMenuPanel() {
+        document.getElementById('mv-menu-panel')?.remove();
+        document.removeEventListener('mousedown', onMenuOutsideClick);
+    }
+
+    function onMenuOutsideClick(e) {
+        if (!e.target.closest('#mv-menu-panel') && !e.target.closest('#mv-roulette-btn')) {
+            closeMenuPanel();
+        }
+    }
 
     // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -783,12 +995,13 @@
         const pluginConfig = await fetchPluginConfig();
         playerSettings = loadPlayerSettings(pluginConfig);
 
-        queue = getQueue();
+        queue = await resolveQueue(getQueue());
 
         document.getElementById('mv-playpause-all-btn').addEventListener('click', playPauseAll);
         document.getElementById('mv-mute-all-btn').addEventListener('click', toggleMuteAll);
         document.getElementById('mv-o-all-btn').addEventListener('click', incrementAllO);
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
+        document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);
 
         document.addEventListener('mousemove', updateSeekFill);
         document.addEventListener('mouseup', () => { commitSeek(); activeSeek = null; });

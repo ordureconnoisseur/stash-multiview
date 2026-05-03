@@ -1,6 +1,6 @@
 # Multi-View Player
 
-A Stash plugin that lets you queue scenes from any browse page and watch up to 12 simultaneously in a minimal grid player.
+A Stash plugin that lets you queue scenes and live search filters from any browse page and watch up to 12 simultaneously in a minimal grid player. Filter slots automatically cycle through matching scenes when each one ends.
 
 ## Requirements
 
@@ -32,21 +32,38 @@ A Stash plugin that lets you queue scenes from any browse page and watch up to 1
 
 ### Picking Mode
 
-On any scene browse page, click the grid icon button in the toolbar (next to the view mode buttons, before the zoom slider) to enable **Picking Mode**. While active, each scene card shows a **+** button in the top-right corner. Click it to add that scene to your queue — the button turns orange and shows a **✓** to confirm it's queued.
+On any scene browse page, click the grid icon button in the toolbar (next to the view mode buttons, before the zoom slider) to enable **Picking Mode**. While active:
 
-You can queue up to **12 scenes** at once.
+- Each scene card shows a **+** button — click to queue that scene (turns orange with a ✓ when queued)
+- A **+** button appears next to Stash's filter icon — click to add the **current search** as a filter slot
+
+A floating launcher in the bottom-right shows your queue and opens the player. It displays scene count and filter slot count as separate badges.
+
+You can queue up to **12 items** (scenes and filter slots combined).
 
 ![Picking Mode](screenshot-picking.png)
 
+### Filter Slots
+
+A filter slot captures your current search query rather than a specific scene. When the player opens, each filter slot picks a random scene matching that search. When the scene ends, the slot automatically fetches and plays another — giving you an endless rotating stream from that search running alongside your pinned scenes. Filter slot cells are labelled **Filter:** in the player.
+
+To add a filter slot: enable Picking Mode, apply your search in Stash, then click the **+** next to the filter icon in the toolbar. The button is only visible while Picking Mode is active.
+
+### Roulette Mode
+
+In the player, click the **dice button** in the top bar (left of Settings) to open the roulette menu. Use the slider to choose how many random scenes to load (1–12), then click **Roll**. Your last count is remembered.
+
+Roulette cells behave like filter slots: each cell shows a **Random:** label and automatically advances to a fresh random scene when the current one ends — no repeats.
+
 ### Scene Detail Page
 
-On an individual scene's page, a grid icon button appears in the scene toolbar. Click it to toggle that scene in or out of your queue — it turns orange when the scene is queued.
+On an individual scene's page, a grid icon button appears in the scene toolbar. Click it to toggle that scene in or out of your queue — it turns orange when queued.
 
 ### Launching the Player
 
-Once at least one scene is queued, a floating **Open Multiview** launcher appears in the bottom-right corner of the screen. It shows the number of queued scenes and opens the player in a new tab. Click **✕** to clear the queue without opening the player.
+Once you have items queued, the floating launcher in the bottom-right shows your scene count and filter slot count. Click the grid icon to open the player in a new tab, or **✕** to clear the queue.
 
-The queue is shared across tabs — adding scenes on one tab is immediately reflected in another.
+The queue is shared across tabs — changes on one tab are immediately reflected in another.
 
 ![Player](screenshot-player.png)
 
@@ -57,12 +74,15 @@ The queue is shared across tabs — adding scenes on one tab is immediately refl
 | Click a cell | Play / pause that scene |
 | Seekbar (bottom of cell) | Scrub to any position |
 | Volume button | Open per-cell volume slider |
-| Mute button | Toggle mute for that cell |
+| Mute All (top bar) | Mute / unmute all scenes simultaneously |
+| **⏮** button | Restart the current scene from the beginning |
+| **⏭** button | For filter/random cells: load the next scene; for pinned scenes: restart |
 | **O** button | Increment the scene's O counter |
+| **O All** (top bar) | Increment O counter on all scenes |
 | **✕** button | Remove scene from the grid |
 | Pause All (top bar) | Play / pause all scenes simultaneously |
-| Mute All (top bar) | Mute / unmute all scenes simultaneously |
-| **O All** (top bar) | Increment O counter on all scenes |
+| Dice button (top bar) | Open roulette — load N random scenes |
+| Settings (top bar) | Quality and display preferences |
 
 The cell with active audio is highlighted with an orange outline.
 
