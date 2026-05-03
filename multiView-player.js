@@ -3,6 +3,7 @@
 
     const STORAGE_KEY = 'stash-multiview-queue';
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
+    const SETTINGS_KEY = 'stash-multiview-settings';
 
     // �"?�"? SVGs �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
@@ -97,7 +98,7 @@
             sf[type] = { value: (value.items || []).map(i => i.id), excludes: (value.excluded || []).map(i => i.id), modifier };
         } else if (['tags', 'studios', 'groups', 'performer_tags'].includes(type)) {
             sf[type] = { value: (value.items || []).map(i => i.id), excludes: (value.excluded || []).map(i => i.id), modifier, depth: value.depth ?? 0 };
-        } else if (['path', 'title', 'code', 'details', 'director', 'url', 'captions', 'video_codec', 'audio_codec', 'oshash', 'checksum', 'phash'].includes(type)) {
+        } else if (['path', 'title', 'code', 'details', 'director', 'url', 'captions', 'video_codec', 'audio_codec', 'oshash', 'checksum', 'phash', 'resolution'].includes(type)) {
             sf[type] = { value, modifier };
         } else if (['rating100', 'o_counter', 'play_count', 'play_duration', 'duration', 'framerate', 'bitrate', 'interactive_speed', 'resume_time', 'file_count', 'performer_age', 'performer_count', 'tag_count'].includes(type)) {
             sf[type] = { value: value?.value ?? 0, value2: value?.value2, modifier };
@@ -105,8 +106,6 @@
             sf[type] = value === 'true' || value === true;
         } else if (['has_markers', 'is_missing'].includes(type)) {
             sf[type] = String(value);
-        } else if (type === 'resolution') {
-            sf.resolution = { value, modifier };
         } else if (['date', 'created_at', 'updated_at', 'last_played_at'].includes(type)) {
             sf[type] = { value: value?.value, value2: value?.value2, modifier };
         }
@@ -157,6 +156,36 @@
                 return id;
             })
         );
+        return resolved.filter(Boolean);
+    }
+
+    // Like resolveQueue but reuses currently-playing IDs for existing filter slots
+    // so adding a scene from Stash doesn't interrupt videos already playing.
+    async function resolveQueuePreserving(rawQueue) {
+        const available = new Map();
+        for (const [id, item] of filterBackedCells) {
+            const key = JSON.stringify(item.filter || {});
+            if (!available.has(key)) available.set(key, []);
+            available.get(key).push(id);
+        }
+        const newFilterBackedCells = new Map();
+        const resolved = await Promise.all(
+            rawQueue.map(async item => {
+                if (typeof item === 'string') return item;
+                const key = JSON.stringify(item.filter || {});
+                const pool = available.get(key);
+                if (pool && pool.length > 0) {
+                    const id = pool.shift();
+                    newFilterBackedCells.set(id, item);
+                    return id;
+                }
+                const id = await resolveFilterSlot(item);
+                if (id) newFilterBackedCells.set(id, item);
+                return id;
+            })
+        );
+        filterBackedCells.clear();
+        for (const [k, v] of newFilterBackedCells) filterBackedCells.set(k, v);
         return resolved.filter(Boolean);
     }
 
@@ -262,33 +291,31 @@
     function loadPlayerSettings(saved = {}) {
         return {
             directPlay: saved.directPlay ?? false,
-            quality: { ...DEFAULT_QUALITY, ...(saved.quality || {}) }
+            quality: { ...DEFAULT_QUALITY, ...(saved.quality || {}) },
+            focusMode: saved.focusMode ?? false
         };
-    }
-
-    async function fetchPluginConfig() {
-        try {
-            const res = await fetch('/graphql', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: '{ configuration { plugins } }' })
-            });
-            const data = await res.json();
-            return data?.data?.configuration?.plugins?.multiView || {};
-        } catch { return {}; }
     }
 
     let playerSettings = loadPlayerSettings();
 
     function savePlayerSettings() {
-        fetch('/graphql', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                query: 'mutation ConfigurePlugin($input: Map!) { configurePlugin(plugin_id: "multiView", input: $input) }',
-                variables: { input: playerSettings }
-            })
-        }).catch(() => {});
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(playerSettings));
+    }
+
+    function applyFocusMode(enabled) {
+        document.body.classList.toggle('mv-focus', enabled);
+        if (enabled) {
+            applyJustifiedLayout();
+        } else {
+            clearJustifiedLayout();
+            detectAndApplyOrientation();
+        }
+    }
+
+    function toggleFocusMode() {
+        playerSettings.focusMode = !playerSettings.focusMode;
+        savePlayerSettings();
+        applyFocusMode(playerSettings.focusMode);
     }
 
     function openSettingsModal() {
@@ -358,6 +385,7 @@
             sel.addEventListener('change', () => {
                 playerSettings.quality[key] = sel.value;
                 savePlayerSettings();
+                applyQualityToAllCells();
             });
             selects[key] = sel;
             row.append(lbl, sel);
@@ -368,6 +396,7 @@
             playerSettings.directPlay = dpToggle.checked;
             savePlayerSettings();
             Object.values(selects).forEach(sel => { sel.disabled = dpToggle.checked; });
+            applyQualityToAllCells();
         });
 
         card.append(header, dpRow, qualSection);
@@ -473,6 +502,10 @@
     }
 
     function detectAndApplyOrientation() {
+        if (playerSettings.focusMode) {
+            applyJustifiedLayout();
+            return;
+        }
         const videos = [...document.querySelectorAll('.mv-cell video')];
         const loaded = videos.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
         if (!loaded.length) return;
@@ -485,6 +518,112 @@
         if (grid && grid.className !== 'layout-' + expectedLayout) {
             grid.className = 'layout-' + expectedLayout;
         }
+    }
+
+    function computeJustifiedLayout(aspectRatios, containerWidth, containerHeight, gap) {
+        const n = aspectRatios.length;
+        if (n === 0) return [];
+
+        // Snap to exact standard ratios — avoids weird sub-pixel aspect classes
+        const snapped = aspectRatios.map(a => a >= 1 ? 16 / 9 : 9 / 16);
+        const totalAspectSum = snapped.reduce((s, a) => s + a, 0);
+        const targetHeight = Math.sqrt((containerWidth * containerHeight) / totalAspectSum);
+
+        // Greedy row packing
+        const rows = [];
+        let rowStart = 0;
+        while (rowStart < n) {
+            let rowEnd = rowStart, rowAspectSum = 0;
+            while (rowEnd < n) {
+                const tentative = rowAspectSum + snapped[rowEnd];
+                const naturalWidth = tentative * targetHeight + (rowEnd - rowStart) * gap;
+                if (rowEnd > rowStart && naturalWidth > containerWidth) break;
+                rowAspectSum += snapped[rowEnd];
+                rowEnd++;
+            }
+            rows.push({ start: rowStart, end: rowEnd, aspectSum: rowAspectSum });
+            rowStart = rowEnd;
+        }
+
+        // Merge single-item rows into a neighbour — solo cells after scaling become very distorted
+        if (rows.length > 1) {
+            for (let r = rows.length - 1; r >= 0; r--) {
+                if (rows[r].end - rows[r].start === 1 && rows.length > 1) {
+                    if (r < rows.length - 1) {
+                        rows[r].end = rows[r + 1].end;
+                        rows[r].aspectSum += rows[r + 1].aspectSum;
+                        rows.splice(r + 1, 1);
+                    } else {
+                        rows[r - 1].end = rows[r].end;
+                        rows[r - 1].aspectSum += rows[r].aspectSum;
+                        rows.splice(r, 1);
+                    }
+                }
+            }
+        }
+
+        // Natural height per row: cells fill containerWidth at exact snapped aspect ratios
+        rows.forEach(row => {
+            row.naturalH = (containerWidth - gap * (row.end - row.start - 1)) / row.aspectSum;
+        });
+
+        // Scale all rows to fill containerHeight exactly
+        const totalNaturalH = rows.reduce((s, r) => s + r.naturalH, 0) + gap * (rows.length - 1);
+        const scale = containerHeight / totalNaturalH;
+
+        // Compute positions.
+        // Widths use naturalH (proportional across all cells, no last-cell distortion spike).
+        // Only the last cell absorbs the ±1–2 px integer rounding remainder.
+        const positions = [];
+        let top = 0;
+        for (let r = 0; r < rows.length; r++) {
+            const row = rows[r];
+            const rowH = Math.round(row.naturalH * scale);
+            if (r > 0) top += gap;
+            let left = 0;
+            for (let i = row.start; i < row.end; i++) {
+                const w = i === row.end - 1
+                    ? containerWidth - Math.round(left)
+                    : Math.round(snapped[i] * row.naturalH);
+                positions.push({ left: Math.round(left), top, width: w, height: rowH });
+                left += w + gap;
+            }
+            top += rowH;
+        }
+        return positions;
+    }
+
+    function applyJustifiedLayout() {
+        if (!playerSettings.focusMode) return;
+        const grid = document.getElementById('mv-grid');
+        if (!grid) return;
+        const cells = [...grid.querySelectorAll('.mv-cell')];
+        if (cells.length === 0) return;
+        const containerWidth  = grid.clientWidth;
+        const containerHeight = grid.clientHeight;
+        if (containerWidth === 0 || containerHeight === 0) return;
+        const GAP = 3;
+        const aspectRatios = cells.map(cell => {
+            const video = cell.querySelector('video');
+            return (video && video.videoWidth > 0 && video.videoHeight > 0)
+                ? video.videoWidth / video.videoHeight
+                : 16 / 9;
+        });
+        const positions = computeJustifiedLayout(aspectRatios, containerWidth, containerHeight, GAP);
+        cells.forEach((cell, i) => {
+            const p = positions[i];
+            if (!p) return;
+            cell.style.left   = p.left   + 'px';
+            cell.style.top    = p.top    + 'px';
+            cell.style.width  = p.width  + 'px';
+            cell.style.height = p.height + 'px';
+        });
+    }
+
+    function clearJustifiedLayout() {
+        document.querySelectorAll('.mv-cell').forEach(cell => {
+            cell.style.left = cell.style.top = cell.style.width = cell.style.height = '';
+        });
     }
 
     // �"?�"? Play / Pause All �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
@@ -659,6 +798,7 @@
             video.loop = !isFilterBacked;
             video.muted = !unmutedIds.has(id);
             video.playsInline = true;
+            video.disablePictureInPicture = true;
 
             if (isFilterBacked) {
                 video.addEventListener('ended', () => advanceFilterCell(id));
@@ -887,14 +1027,15 @@
             grid.insertBefore(cell, refCell);
         });
 
-        // Remove cells no longer in queue, and update quality for existing ones
+        // Remove cells no longer in queue
         grid.querySelectorAll('.mv-cell').forEach(cell => {
-            const id = cell.dataset.sceneId;
-            if (!queue.includes(id)) {
-                cell.remove();
-                return;
-            }
+            if (!queue.includes(cell.dataset.sceneId)) cell.remove();
+        });
+    }
 
+    function applyQualityToAllCells() {
+        document.querySelectorAll('.mv-cell').forEach(cell => {
+            const id = cell.dataset.sceneId;
             const video = cell.querySelector('video');
             if (!video) return;
 
@@ -902,37 +1043,35 @@
             const currentSrc = video.getAttribute('src') || '';
             const baseSrc = currentSrc.split(/[?&]start=/)[0];
 
-            if (baseSrc && baseSrc !== optimalSrc) {
-                let currentTime = video.currentTime;
-                if (currentSrc.match(/[?&]start=/)) {
-                    currentTime += (seekBases.get(id) || 0);
-                }
+            if (!baseSrc || baseSrc === optimalSrc) return;
 
-                const wasPlaying = !video.paused;
-                const isTranscode = optimalSrc.includes('.webm') || optimalSrc.includes('.mp4');
+            let currentTime = video.currentTime;
+            if (currentSrc.match(/[?&]start=/)) currentTime += (seekBases.get(id) || 0);
 
-                if (!cell.querySelector('.mv-loading')) {
-                    const s = document.createElement('div');
-                    s.className = 'mv-loading';
-                    s.innerHTML = '<div class="mv-spinner"></div>';
-                    cell.appendChild(s);
-                }
+            const wasPlaying = !video.paused;
+            const isTranscode = optimalSrc.includes('.webm') || optimalSrc.includes('.mp4');
 
-                if (isTranscode && currentTime > 0) {
-                    const sep = optimalSrc.includes('?') ? '&' : '?';
-                    seekBases.set(id, currentTime);
-                    video.src = optimalSrc + sep + 'start=' + currentTime;
-                } else {
-                    seekBases.set(id, 0);
-                    video.src = optimalSrc;
-                    const onMeta = () => {
-                        if (currentTime > 0) video.currentTime = currentTime;
-                        video.removeEventListener('loadedmetadata', onMeta);
-                    };
-                    video.addEventListener('loadedmetadata', onMeta);
-                }
-                if (wasPlaying || video.autoplay) video.play();
+            if (!cell.querySelector('.mv-loading')) {
+                const s = document.createElement('div');
+                s.className = 'mv-loading';
+                s.innerHTML = '<div class="mv-spinner"></div>';
+                cell.appendChild(s);
             }
+
+            if (isTranscode && currentTime > 0) {
+                const sep = optimalSrc.includes('?') ? '&' : '?';
+                seekBases.set(id, currentTime);
+                video.src = optimalSrc + sep + 'start=' + currentTime;
+            } else {
+                seekBases.set(id, 0);
+                video.src = optimalSrc;
+                const onMeta = () => {
+                    if (currentTime > 0) video.currentTime = currentTime;
+                    video.removeEventListener('loadedmetadata', onMeta);
+                };
+                video.addEventListener('loadedmetadata', onMeta);
+            }
+            if (wasPlaying || video.autoplay) video.play();
         });
     }
 
@@ -940,7 +1079,7 @@
 
     window.addEventListener('storage', e => {
         if (e.key !== STORAGE_KEY) return;
-        resolveQueue(getQueue()).then(resolved => {
+        resolveQueuePreserving(getQueue()).then(resolved => {
             queue = resolved;
             loadSceneMeta(queue).then(render);
         });
@@ -1040,8 +1179,12 @@
     // �"?�"? Init �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     async function init() {
-        const pluginConfig = await fetchPluginConfig();
-        playerSettings = loadPlayerSettings(pluginConfig);
+        const savedSettings = (() => {
+            try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }
+            catch { return {}; }
+        })();
+        playerSettings = loadPlayerSettings(savedSettings);
+        applyFocusMode(playerSettings.focusMode);
 
         queue = await resolveQueue(getQueue());
 
@@ -1050,6 +1193,14 @@
         document.getElementById('mv-o-all-btn').addEventListener('click', incrementAllO);
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
         document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);
+        document.addEventListener('keydown', e => {
+            if (e.key === 'f' || e.key === 'F') toggleFocusMode();
+            else if (e.key === 'm' || e.key === 'M') toggleMuteAll();
+            else if (e.key === 'p' || e.key === 'P') playPauseAll();
+        });
+        window.addEventListener('resize', () => {
+            if (playerSettings.focusMode) applyJustifiedLayout();
+        });
 
         document.addEventListener('mousemove', updateSeekFill);
         document.addEventListener('mouseup', () => { commitSeek(); activeSeek = null; });
