@@ -284,9 +284,10 @@
         { key: 6,  label: '6 videos'  },
         { key: 9,  label: '9 videos'  },
         { key: 12, label: '12 videos' },
+        { key: 16, label: '16 videos' },
     ];
 
-    const DEFAULT_QUALITY = { 1: 'webm1080', 2: 'webm720', 4: 'webm720', 6: 'webm480', 9: 'webm480', 12: 'webm360' };
+    const DEFAULT_QUALITY = { 1: 'webm1080', 2: 'webm720', 4: 'webm720', 6: 'webm480', 9: 'webm480', 12: 'webm360', 16: 'webm360' };
 
     function loadPlayerSettings(saved = {}) {
         return {
@@ -419,7 +420,7 @@
         if (playerSettings.directPlay) return direct;
 
         const count = queue.length;
-        const gridKey = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 4 : count <= 6 ? 6 : count <= 9 ? 9 : 12;
+        const gridKey = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 4 : count <= 6 ? 6 : count <= 9 ? 9 : count <= 12 ? 12 : 16;
         const preferred = playerSettings.quality[gridKey] || 'webm720';
 
         if (preferred === 'direct') return direct;
@@ -498,7 +499,8 @@
         if (count <= 4) return '2x2';
         if (count <= 6) return '3x2';
         if (count <= 9) return '3x3';
-        return '3x4';
+        if (count <= 12) return '3x4';
+        return '4x4';
     }
 
     function detectAndApplyOrientation() {
@@ -1121,7 +1123,7 @@
         slider.type = 'range';
         slider.className = 'mv-menu-slider';
         slider.min = 1;
-        slider.max = 12;
+        slider.max = 16;
         slider.value = savedCount;
         slider.addEventListener('input', () => { countDisplay.textContent = slider.value; });
 

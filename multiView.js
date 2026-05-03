@@ -82,6 +82,7 @@
         const f = parseCurrentFilter();
         if (!f) return;
         const q = getQueue();
+        if (q.length >= 16) { alert('Maximum 16 items in the multiview queue.'); return; }
         q.push({ type: 'filter', filter: f });
         saveQueue(q);
     }
@@ -94,7 +95,7 @@
         const q = getQueue();
         const idx = q.indexOf(String(id));
         if (idx === -1) {
-            if (q.length >= 12) { alert('Maximum 12 items in the multiview queue.'); return; }
+            if (q.length >= 16) { alert('Maximum 16 items in the multiview queue.'); return; }
             q.push(String(id));
         } else {
             q.splice(idx, 1);
