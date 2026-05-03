@@ -37,8 +37,7 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
         updateAllButtons();
         updateLauncher();
-        const filterBtn = document.getElementById('mv-filter-add-btn');
-        if (filterBtn) updateFilterBtn(filterBtn);
+        injectFilterBtn();
     }
 
     function getSceneCount() {
@@ -353,7 +352,7 @@
             injectPickingModeToggle();
             injectFilterBtn();
             injectScenePageButton();
-        }, 150);
+        }, 50);
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
