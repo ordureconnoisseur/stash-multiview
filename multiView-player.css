@@ -106,6 +106,7 @@ html, body {
 #mv-grid.layout-3x2 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
 #mv-grid.layout-3x3 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; }
 #mv-grid.layout-3x4 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr 1fr; }
+#mv-grid.layout-4x4 { grid-template-columns: 1fr 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr 1fr; }
 
 /* ── Cell ──────────────────────────────────────────────────────────────────── */
 
@@ -251,6 +252,12 @@ html, body {
 #mv-grid.layout-3x4 .mv-cell-playpause svg { width: 10px; height: 10px; }
 #mv-grid.layout-3x4 .mv-cell-skip-btn { width: 22px; height: 22px; }
 #mv-grid.layout-3x4 .mv-cell-skip-btn svg { width: 8px; height: 8px; }
+
+#mv-grid.layout-4x4 .mv-cell-center-controls { gap: 4px; }
+#mv-grid.layout-4x4 .mv-cell-playpause { width: 28px; height: 28px; }
+#mv-grid.layout-4x4 .mv-cell-playpause svg { width: 8px; height: 8px; }
+#mv-grid.layout-4x4 .mv-cell-skip-btn { width: 18px; height: 18px; }
+#mv-grid.layout-4x4 .mv-cell-skip-btn svg { width: 6px; height: 6px; }
 
 .mv-cell-controls {
     display: flex;
