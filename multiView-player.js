@@ -305,6 +305,7 @@
 
     function applyFocusMode(enabled) {
         document.body.classList.toggle('mv-focus', enabled);
+        document.getElementById('mv-focus-btn')?.classList.toggle('active', enabled);
         if (enabled) {
             applyJustifiedLayout();
         } else {
@@ -529,13 +530,9 @@
         const snapped = aspectRatios.map(a => a >= 1 ? 16 / 9 : 9 / 16);
         const totalAspectSum = snapped.reduce((s, a) => s + a, 0);
 
-        // Derive the ideal row count from the container's aspect ratio and total content width.
-        // This avoids the greedy+merge approach which can collapse items into a single distorted row.
         const numRows = Math.max(1, Math.round(Math.sqrt(totalAspectSum * containerHeight / containerWidth)));
         const targetPerRow = totalAspectSum / numRows;
 
-        // Distribute items into numRows rows by aspect-sum equalization.
-        // Start a new row when adding the next item would overshoot the target more than the current undershoot.
         const rows = [];
         let cur = { start: 0, end: 0, aspectSum: 0 };
         for (let i = 0; i < n; i++) {
@@ -550,7 +547,6 @@
         }
         rows.push(cur);
 
-        // Natural height per row and scale to fill containerHeight
         rows.forEach(row => {
             row.naturalH = (containerWidth - gap * (row.end - row.start - 1)) / row.aspectSum;
         });
@@ -1174,6 +1170,7 @@
         document.getElementById('mv-playpause-all-btn').addEventListener('click', playPauseAll);
         document.getElementById('mv-mute-all-btn').addEventListener('click', toggleMuteAll);
         document.getElementById('mv-o-all-btn').addEventListener('click', incrementAllO);
+        document.getElementById('mv-focus-btn').addEventListener('click', toggleFocusMode);
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
         document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);
         document.addEventListener('keydown', e => {
