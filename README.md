@@ -90,13 +90,15 @@ The cell with active audio is highlighted with an orange outline.
 
 ### Focus Mode
 
-Click the **focus button** in the top bar (or press **F**) to toggle Focus Mode. In focus mode:
+Click the **focus button** in the top bar (or press **F**) to toggle Focus Mode. Focus mode is designed for lean-back watching — all chrome disappears and every pixel goes to video.
 
-- The top bar fades out (hover to reveal it)
+- The top bar fades out; hover over it to reveal controls
 - Seek bars are hidden
-- Videos tile edge-to-edge using a justified layout — each cell is sized to its native aspect ratio (16:9 landscape or 9:16 portrait) so no space is wasted and cropping is minimised
+- Videos tile edge-to-edge using a **justified layout** — each cell is sized proportionally to its native aspect ratio (16:9 or 9:16) so no space is wasted and cropping is minimised
 
-Press **F** again to return to the normal grid.
+![Focus Mode](screenshot-focus.png)
+
+Press **F** (or click the focus button) again to return to the normal grid.
 
 ### Keyboard Shortcuts
 
