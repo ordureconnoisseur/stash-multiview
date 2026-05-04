@@ -127,6 +127,7 @@
         const zoomSlider = document.querySelector('input[type="range"]');
         if (zoomSlider) {
             document.getElementById('mv-picking-standalone')?.remove();
+            document.querySelectorAll('.pagination .mv-picking-toggle-btn').forEach(b => b.remove());
             const allGroups = [...document.querySelectorAll('.btn-group')];
             const lastBtnGroup = allGroups.reverse().find(g =>
                 g.compareDocumentPosition(zoomSlider) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -141,29 +142,7 @@
             return;
         }
 
-        // Priority 2: pagination bar
-        const paginations = document.querySelectorAll('.pagination');
-        if (paginations.length) {
-            document.getElementById('mv-picking-standalone')?.remove();
-            paginations.forEach(pagination => {
-                if (pagination.querySelector('.mv-picking-toggle-btn')) return;
-                const btn = createPickingToggleBtn();
-                btn.style.marginLeft = '12px';
-                pagination.appendChild(btn);
-            });
-            return;
-        }
-
-        // Priority 3: standalone fixed button when scene cards are present
-        if (!document.querySelector('.scene-card')) {
-            document.getElementById('mv-picking-standalone')?.remove();
-            return;
-        }
-        if (document.getElementById('mv-picking-standalone')) return;
-
-        const btn = createPickingToggleBtn();
-        btn.id = 'mv-picking-standalone';
-        document.body.appendChild(btn);
+        document.getElementById('mv-picking-standalone')?.remove();
     }
 
     // ?"??"? Card buttons ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
