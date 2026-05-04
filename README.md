@@ -1,6 +1,6 @@
 # Multi-View Player
 
-A Stash plugin that lets you queue scenes and live search filters from any browse page and watch up to 12 simultaneously in a minimal grid player. Filter slots automatically cycle through matching scenes when each one ends.
+A Stash plugin that lets you queue scenes and live search filters from any browse page and watch up to 16 simultaneously in a minimal grid player. Filter slots automatically cycle through matching scenes when each one ends.
 
 ## Requirements
 
@@ -39,7 +39,7 @@ On any scene browse page, click the grid icon button in the toolbar (next to the
 
 A floating launcher in the bottom-right shows your queue and opens the player. It displays scene count and filter slot count as separate badges.
 
-You can queue up to **12 items** (scenes and filter slots combined).
+You can queue up to **16 items** (scenes and filter slots combined).
 
 ![Picking Mode](screenshot-picking.png)
 
@@ -51,7 +51,7 @@ To add a filter slot: enable Picking Mode, apply your search in Stash, then clic
 
 ### Roulette Mode
 
-In the player, click the **dice button** in the top bar (left of Settings) to open the roulette menu. Use the slider to choose how many random scenes to load (1–12), then click **Roll**. Your last count is remembered.
+In the player, click the **dice button** in the top bar (left of Settings) to open the roulette menu. Use the slider to choose how many random scenes to load (1–16), then click **Roll**. Your last count is remembered.
 
 Roulette cells behave like filter slots: each cell shows a **Random:** label and automatically advances to a fresh random scene when the current one ends — no repeats.
 
@@ -81,15 +81,16 @@ The queue is shared across tabs — changes on one tab are immediately reflected
 | **O All** (top bar) | Increment O counter on all scenes |
 | **✕** button | Remove scene from the grid |
 | Pause All (top bar) | Play / pause all scenes simultaneously |
+| Focus button (top bar) | Toggle Focus Mode (justified layout, hidden UI) |
 | Dice button (top bar) | Open roulette — load N random scenes |
 | Settings (top bar) | Quality and display preferences |
-| `F` key | Toggle Focus Mode (justified layout, hidden UI) |
+| `F` key | Toggle Focus Mode |
 
 The cell with active audio is highlighted with an orange outline.
 
 ### Focus Mode
 
-Press **F** to toggle Focus Mode. In focus mode:
+Click the **focus button** in the top bar (or press **F**) to toggle Focus Mode. In focus mode:
 
 - The top bar fades out (hover to reveal it)
 - Seek bars are hidden
