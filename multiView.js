@@ -264,8 +264,14 @@
 
     function updateFilterBtn(btn) {
         const count = countCurrentFilterSlots();
-        const badge = count > 0 ? `<span class="mv-filter-badge">${count}</span>` : '';
-        btn.innerHTML = PLUS_ICON_SVG + badge;
+        if (!btn.querySelector('svg')) btn.insertAdjacentHTML('afterbegin', PLUS_ICON_SVG);
+        let badge = btn.querySelector('.mv-filter-badge');
+        if (count > 0) {
+            if (!badge) { badge = document.createElement('span'); badge.className = 'mv-filter-badge'; btn.appendChild(badge); }
+            badge.textContent = String(count);
+        } else if (badge) {
+            badge.remove();
+        }
         btn.title = count > 0
             ? `Add another slot for this filter (${count} already queued)`
             : 'Add current search as filter card';
