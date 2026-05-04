@@ -77,6 +77,8 @@ html, body {
 .mv-topbar-icon-btn.active:hover { background: #1f451f; color: #8e8; }
 .mv-topbar-icon-btn svg { width: 13px; height: 13px; }
 #mv-focus-btn svg { width: 16px; height: 16px; }
+#mv-focus-btn.active { background: #f97316; border-color: #f97316; color: #fff; }
+#mv-focus-btn.active:hover { background: #ea6c0a; border-color: #ea6c0a; }
 
 #mv-playpause-all-btn { color: #888; }
 #mv-playpause-all-btn:hover { color: #fff; }
