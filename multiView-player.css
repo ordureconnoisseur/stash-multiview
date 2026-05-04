@@ -746,3 +746,6 @@ body.mv-focus .mv-cell video {
 body.mv-focus .mv-seekbar {
     display: none;
 }
+body.mv-focus .mv-cell:hover .mv-seekbar {
+    display: block;
+}
