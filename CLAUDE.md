@@ -12,13 +12,12 @@
 
 ## Sync workflow
 
+`C:\Users\ethork\.stash\plugins\multiView` is a Windows junction pointing to `C:\Users\ethork\stash-multiview-repo` — they are the same folder. Pulling the repo instantly updates the live plugin, no file copying needed.
+
 **Making changes:**
 1. Edit files in `/Users/ethork/stash-multiview` on the Mac
 2. `git push` from the Mac — credentials work here, not over SSH to the PC
 3. Pull on PC: `ssh pc "cd C:\Users\ethork\stash-multiview-repo && git pull"`
-4. Copy updated files to the live plugin dir on PC:
-   `scp /Users/ethork/stash-multiview/multiView.js pc:'C:/Users/ethork/.stash/plugins/multiView/multiView.js'`
-   (repeat for any other changed files)
 
 **SSHing to PC:** `ssh pc` (host alias defined in `~/.ssh/config`, key at `~/.ssh/id_ed25519_pc`)
 
