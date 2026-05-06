@@ -120,29 +120,47 @@
     function injectPickingModeToggle() {
         if (window.location.pathname.match(/^\/scenes\/\d+/)) {
             document.getElementById('mv-picking-standalone')?.remove();
+            document.querySelectorAll('.mv-picking-toggle-btn').forEach(b => b.remove());
             return;
         }
 
-        // Priority 1: append into the display-mode button group (last btn-group before the zoom slider)
         const zoomSlider = document.querySelector('input[type="range"]');
-        if (zoomSlider) {
+        if (!zoomSlider) {
             document.getElementById('mv-picking-standalone')?.remove();
-            document.querySelectorAll('.pagination .mv-picking-toggle-btn').forEach(b => b.remove());
-            const allGroups = [...document.querySelectorAll('.btn-group')];
-            const lastBtnGroup = allGroups.reverse().find(g =>
-                g.compareDocumentPosition(zoomSlider) & Node.DOCUMENT_POSITION_FOLLOWING
-            );
-            if (lastBtnGroup) {
-                if (!lastBtnGroup.querySelector('.mv-picking-toggle-btn')) {
-                    lastBtnGroup.appendChild(createPickingToggleBtn());
-                }
-            } else if (!zoomSlider.parentElement.querySelector('.mv-picking-toggle-btn')) {
-                zoomSlider.parentElement.insertBefore(createPickingToggleBtn(), zoomSlider);
-            }
             return;
         }
 
         document.getElementById('mv-picking-standalone')?.remove();
+        document.querySelectorAll('.pagination .mv-picking-toggle-btn').forEach(b => b.remove());
+
+        // Anchor: last btn-group before the zoom slider (the display-mode group).
+        const allGroups = [...document.querySelectorAll('.btn-group')];
+        const lastBtnGroup = allGroups.reverse().find(g =>
+            g.compareDocumentPosition(zoomSlider) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+
+        // Place the toggle as a SIBLING after the btn-group instead of inside it.
+        // Themes commonly hide / replace the display-mode btn-group (e.g. with a
+        // chevron dropdown) and the toggle would get hidden along with it; placing
+        // it outside keeps it visible and avoids cross-plugin "rescue" hacks.
+        let targetParent, insertBefore;
+        if (lastBtnGroup) {
+            targetParent = lastBtnGroup.parentElement;
+            insertBefore = lastBtnGroup.nextSibling;
+        } else {
+            targetParent = zoomSlider.parentElement;
+            insertBefore = zoomSlider;
+        }
+        if (!targetParent) return;
+
+        // If the toggle already sits at the right spot, no-op.
+        const existing = targetParent.querySelector(':scope > .mv-picking-toggle-btn');
+        if (existing) return;
+
+        // Otherwise clean any orphaned instances (e.g. inside a re-rendered group)
+        // and inject fresh at the stable location.
+        document.querySelectorAll('.mv-picking-toggle-btn').forEach(b => b.remove());
+        targetParent.insertBefore(createPickingToggleBtn(), insertBefore);
     }
 
     // ?"??"? Card buttons ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
