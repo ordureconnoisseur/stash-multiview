@@ -242,10 +242,20 @@
 
     // ?"??"? Floating launcher ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
+    // Whitelist of paths where the floating launcher is allowed to mount.
+    // Without this, the launcher follows the user into Settings, Tasks,
+    // Logs, System etc. — pages where queueing scenes is not a thing.
+    function isLauncherAllowedHere() {
+        return /^\/scenes(\/|$)/.test(window.location.pathname);
+    }
+
     function updateLauncher() {
         let el = document.getElementById('mv-launcher');
 
-        if (!getPickingMode()) { if (el) el.remove(); return; }
+        if (!isLauncherAllowedHere() || !getPickingMode()) {
+            if (el) el.remove();
+            return;
+        }
 
         if (!el) {
             el = document.createElement('div');
@@ -296,8 +306,20 @@
         btn.classList.toggle('mv-filter-has-slots', count > 0);
     }
 
+    // The filter-add button only makes sense when the page is currently
+    // filtering scenes. URL whitelist for routes that *can* show scenes
+    // (excluding the single-scene detail page), AND a runtime check that
+    // scene cards are actually rendered (handles e.g. a performer's
+    // Images tab where the toolbar exists but no scene cards do).
+    function isFilterAddBtnAllowedHere() {
+        const p = window.location.pathname;
+        if (/^\/scenes\/\d+/.test(p)) return false;
+        if (!/^\/(scenes|performers|studios|tags|groups|movies|galleries)(\/|$)/.test(p)) return false;
+        return !!document.querySelector('.scene-card');
+    }
+
     function injectFilterBtn() {
-        if (window.location.pathname.match(/^\/scenes\/\d+/) || !getPickingMode()) {
+        if (!isFilterAddBtnAllowedHere() || !getPickingMode()) {
             document.getElementById('mv-filter-add-btn')?.remove();
             return;
         }
