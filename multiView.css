@@ -1,3 +1,22 @@
+/* ── Theme tokens ──────────────────────────────────────────────────────────
+   multiview is theme-aware. Host themes can override any of these vars to
+   reskin the plugin. The accent family also chains to common Stash-theme
+   conventions (--accent / --accent-bright / --accent-tint) so widely-used
+   themes retint multiview automatically without explicit integration.
+
+   Themes that want to fully reskin (chrome bg, borders) override the
+   multiview-namespaced vars directly. Pure dark fallback values match
+   what multiview shipped before token introduction — vanilla Stash
+   sees zero visual change. */
+:root {
+    --mv-accent:        var(--accent, #f97316);
+    --mv-accent-hover:  var(--accent-bright, #ea6c0a);
+    --mv-accent-tint:   var(--accent-tint, rgba(249, 115, 22, 0.2));
+    --mv-chrome-bg:     #1a1a1a;
+    --mv-border:        #333;
+    --mv-overlay-bg:    rgba(0, 0, 0, 0.65);
+}
+
 /* ── Picking Mode ──────────────────────────────────────────────────────────── */
 
 body:not(.mv-picking-mode) .mv-add-btn {
@@ -11,8 +30,8 @@ body:not(.mv-picking-mode) .mv-add-btn {
 }
 
 .mv-picking-toggle-btn.active {
-    background-color: #f97316 !important;
-    border-color: #f97316 !important;
+    background-color: var(--mv-accent) !important;
+    border-color: var(--mv-accent) !important;
     color: #fff !important;
 }
 
@@ -27,7 +46,7 @@ body:not(.mv-picking-mode) .mv-add-btn {
     height: 28px;
     border: none;
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.65);
+    background: var(--mv-overlay-bg);
     color: #fff;
     font-size: 18px;
     line-height: 1;
@@ -44,7 +63,7 @@ body:not(.mv-picking-mode) .mv-add-btn {
 }
 
 .mv-add-btn.mv-queued {
-    background: #f97316;
+    background: var(--mv-accent);
     color: #fff;
 }
 
@@ -62,8 +81,8 @@ body:not(.mv-picking-mode) .mv-add-btn {
 }
 
 .mv-scene-page-btn.active {
-    background-color: #f97316 !important;
-    border-color: #f97316 !important;
+    background-color: var(--mv-accent) !important;
+    border-color: var(--mv-accent) !important;
     color: #fff !important;
 }
 
@@ -93,8 +112,8 @@ body:not(.mv-picking-mode) .mv-add-btn {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: #1a1a1a;
-    border: 1px solid #333;
+    background: var(--mv-chrome-bg);
+    border: 1px solid var(--mv-border);
     border-radius: 10px;
     padding: 6px 8px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
@@ -104,7 +123,7 @@ body:not(.mv-picking-mode) .mv-add-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #f97316;
+    background: var(--mv-accent);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -116,7 +135,7 @@ body:not(.mv-picking-mode) .mv-add-btn {
 }
 
 #mv-open-btn:hover {
-    background: #ea6c0a;
+    background: var(--mv-accent-hover);
 }
 
 #mv-open-btn svg {
@@ -139,8 +158,8 @@ body:not(.mv-picking-mode) .mv-add-btn {
 }
 
 .mv-launcher-filter-count {
-    background: rgba(249, 115, 22, 0.2);
-    color: #f97316;
+    background: var(--mv-accent-tint);
+    color: var(--mv-accent);
 }
 
 #mv-clear-queue {
@@ -161,7 +180,7 @@ body:not(.mv-picking-mode) .mv-add-btn {
 
 #mv-clear-queue:hover {
     color: #fff;
-    background: #333;
+    background: var(--mv-border);
 }
 
 /* ── Filter add button ─────────────────────────────────────────────────────── */
@@ -184,8 +203,8 @@ body:not(.mv-picking-mode) .mv-filter-add-btn {
 }
 
 .mv-filter-add-btn.mv-filter-has-slots {
-    background-color: #f97316 !important;
-    border-color: #f97316 !important;
+    background-color: var(--mv-accent) !important;
+    border-color: var(--mv-accent) !important;
     color: #fff !important;
 }
 
