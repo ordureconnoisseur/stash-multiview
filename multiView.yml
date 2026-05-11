@@ -1,6 +1,6 @@
 name: Stash Multiview
 description: Queue scenes and live search filters, watch up to 16 simultaneously. Filter slots auto-cycle through matching scenes.
-version: 3.4.0
+version: 3.5.3
 url: https://github.com/ordureconnoisseur/stash-multiview
 ui:
   assets:

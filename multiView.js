@@ -53,13 +53,17 @@
         const params = new URLSearchParams(window.location.search);
         const f = {};
 
-        // Entity-scoped scene pages
+        // Entity-scoped scene pages. On these routes Stash injects the
+        // entity as an implicit criterion via its useXxxFilterHook —
+        // there's no c-param, so we have to add it ourselves.
         const performerMatch = path.match(/^\/performers\/(\d+)\/scenes/);
-        const tagMatch      = path.match(/^\/tags\/(\d+)\/scenes/);
-        const studioMatch   = path.match(/^\/studios\/(\d+)\/scenes/);
+        const tagMatch       = path.match(/^\/tags\/(\d+)\/scenes/);
+        const studioMatch    = path.match(/^\/studios\/(\d+)\/scenes/);
+        const groupMatch     = path.match(/^\/groups\/(\d+)\/scenes/);
         if (performerMatch) f.performerId = performerMatch[1];
         if (tagMatch)       f.tagId       = tagMatch[1];
         if (studioMatch)    f.studioId    = studioMatch[1];
+        if (groupMatch)     f.groupId     = groupMatch[1];
 
         // Query-string filters (scenes browse page)
         if (params.get('q')) f.q = params.get('q');
@@ -242,11 +246,11 @@
 
     // ?"??"? Floating launcher ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
-    // Whitelist of paths where the floating launcher is allowed to mount.
-    // Without this, the launcher follows the user into Settings, Tasks,
-    // Logs, System etc. — pages where queueing scenes is not a thing.
+    // Picking mode is opt-in, so when it's on the launcher follows the
+    // user everywhere — single-scene page included. The X button on the
+    // launcher handles "I'm done" (clears queue, then disables picking).
     function isLauncherAllowedHere() {
-        return /^\/scenes(\/|$)/.test(window.location.pathname);
+        return true;
     }
 
     function updateLauncher() {
@@ -270,7 +274,12 @@
             document.getElementById('mv-open-btn').addEventListener('click', () => {
                 window.open(PLAYER_URL, '_blank');
             });
-            document.getElementById('mv-clear-queue').addEventListener('click', () => saveQueue([]));
+            // First press clears the queue; with an already-empty queue the
+            // X dismisses the launcher by disabling picking mode.
+            document.getElementById('mv-clear-queue').addEventListener('click', () => {
+                if (getQueue().length > 0) saveQueue([]);
+                else togglePickingMode();
+            });
         }
 
         const sceneCount = getSceneCount();
@@ -285,7 +294,7 @@
         sceneEl.style.display = sceneCount ? '' : 'none';
         filterEl.textContent = filterCount;
         filterEl.style.display = filterCount ? '' : 'none';
-        clearBtn.style.display = total ? '' : 'none';
+        clearBtn.title = total ? 'Clear queue' : 'Disable picking mode';
     }
 
     // ?"??"? Filter add button ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
@@ -307,14 +316,18 @@
     }
 
     // The filter-add button only makes sense when the page is currently
-    // filtering scenes. URL whitelist for routes that *can* show scenes
-    // (excluding the single-scene detail page), AND a runtime check that
-    // scene cards are actually rendered (handles e.g. a performer's
-    // Images tab where the toolbar exists but no scene cards do).
+    // listing scenes. Whitelist the routes that primarily render scene
+    // cards — the main scenes list and entity-scoped /scenes tabs for
+    // performers/studios/tags/groups. /galleries, /images, /movies (no
+    // longer a route in modern Stash), and other-tab routes are excluded.
+    // The runtime .scene-card check catches /scenes/markers and tabs that
+    // haven't finished rendering their cards yet.
     function isFilterAddBtnAllowedHere() {
         const p = window.location.pathname;
         if (/^\/scenes\/\d+/.test(p)) return false;
-        if (!/^\/(scenes|performers|studios|tags|groups|movies|galleries)(\/|$)/.test(p)) return false;
+        const isScenesList   = /^\/scenes(\/|$)/.test(p);
+        const isEntityScenes = /^\/(performers|studios|tags|groups)\/\d+\/scenes/.test(p);
+        if (!isScenesList && !isEntityScenes) return false;
         return !!document.querySelector('.scene-card');
     }
 
