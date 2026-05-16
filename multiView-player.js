@@ -731,6 +731,93 @@
         await Promise.all(queue.map(incrementO));
     }
 
+    // ── Play tracking ───────────────────────────────────────────────────────
+    // Records plays to Stash so multiview-watched scenes appear in history and
+    // contribute to play_count / play_duration like the native player does.
+
+    const playTrackers = new Map(); // video element → tracker
+    let activityFlushTimer = null;
+    const ACTIVITY_FLUSH_MS = 10000;
+
+    function sceneAddPlay(id) {
+        fetch('/graphql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: `mutation AddPlay($id: ID!, $times: [Timestamp!]) { sceneAddPlay(id: $id, times: $times) { count } }`,
+                variables: { id: String(id), times: [new Date().toISOString()] }
+            })
+        }).catch(() => {});
+    }
+
+    function sceneSaveActivity(id, playDuration) {
+        fetch('/graphql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // resume_time omitted: looping/auto-advancing multiview cells have
+            // no meaningful resume position.
+            body: JSON.stringify({
+                query: `mutation SaveActivity($id: ID!, $playDuration: Float) { sceneSaveActivity(id: $id, playDuration: $playDuration) }`,
+                variables: { id: String(id), playDuration }
+            })
+        }).catch(() => {});
+    }
+
+    function accumulatePlay(tracker) {
+        if (tracker.sessionStart != null) {
+            const now = performance.now();
+            tracker.accumulated += (now - tracker.sessionStart) / 1000;
+            tracker.sessionStart = now;
+        }
+    }
+
+    function flushTracker(tracker) {
+        accumulatePlay(tracker);
+        if (tracker.accumulated >= 1) {
+            sceneSaveActivity(tracker.sceneId, tracker.accumulated);
+            tracker.accumulated = 0;
+        }
+    }
+
+    function flushAllTrackers() {
+        for (const tracker of playTrackers.values()) flushTracker(tracker);
+    }
+
+    function setupPlayTracking(id, video) {
+        const tracker = { sceneId: id, accumulated: 0, sessionStart: null, addPlaySent: false };
+        playTrackers.set(video, tracker);
+
+        video.addEventListener('play', () => {
+            if (tracker.sessionStart == null) tracker.sessionStart = performance.now();
+            if (!tracker.addPlaySent) {
+                tracker.addPlaySent = true;
+                sceneAddPlay(id);
+            }
+        });
+        video.addEventListener('pause', () => accumulatePlay(tracker));
+        video.addEventListener('ended', () => accumulatePlay(tracker));
+
+        if (!activityFlushTimer) {
+            activityFlushTimer = setInterval(flushAllTrackers, ACTIVITY_FLUSH_MS);
+        }
+    }
+
+    function teardownPlayTracking(video) {
+        const tracker = playTrackers.get(video);
+        if (!tracker) return;
+        flushTracker(tracker);
+        playTrackers.delete(video);
+        if (playTrackers.size === 0 && activityFlushTimer) {
+            clearInterval(activityFlushTimer);
+            activityFlushTimer = null;
+        }
+    }
+
+    window.addEventListener('pagehide', flushAllTrackers);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushAllTrackers();
+    });
+
     // �"?�"? Layout �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function autoLayout(count, isPortrait = false) {
@@ -1028,6 +1115,8 @@
                 detectAndApplyOrientation();
             }, { once: true });
 
+            setupPlayTracking(id, video);
+
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'mv-loading';
             loadingDiv.innerHTML = '<div class="mv-spinner"></div>';
@@ -1258,7 +1347,11 @@
 
         // Remove cells no longer in queue
         grid.querySelectorAll('.mv-cell').forEach(cell => {
-            if (!queue.includes(cell.dataset.sceneId)) cell.remove();
+            if (!queue.includes(cell.dataset.sceneId)) {
+                const v = cell.querySelector('video');
+                if (v) teardownPlayTracking(v);
+                cell.remove();
+            }
         });
     }
 
