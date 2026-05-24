@@ -4,6 +4,10 @@
     const STORAGE_KEY = 'stash-multiview-queue';
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
     const SETTINGS_KEY = 'stash-multiview-settings';
+    const PROGRESS_KEY = 'stash-multiview-progress';
+    const PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    const PROGRESS_SAVE_INTERVAL_MS = 5000;
+    const PROGRESS_MIN_SAVE = 5;
 
     // �"?�"? SVGs �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
@@ -80,6 +84,59 @@
 
     function saveQueue(q) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
+    }
+
+    // Per-scene playback position so reloads resume where the user left off.
+    // TTL-pruned so the map doesn't grow unbounded across many viewing sessions.
+    function loadProgressMap() {
+        try {
+            const map = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+            const now = Date.now();
+            let pruned = false;
+            for (const k of Object.keys(map)) {
+                if (!map[k] || now - (map[k].u || 0) > PROGRESS_MAX_AGE_MS) {
+                    delete map[k];
+                    pruned = true;
+                }
+            }
+            if (pruned) localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+            return map;
+        } catch { return {}; }
+    }
+
+    function getResumeTime(id) {
+        return loadProgressMap()[String(id)]?.t || 0;
+    }
+
+    function saveResumeTime(id, t) {
+        if (!(t >= PROGRESS_MIN_SAVE)) return;
+        try {
+            const map = loadProgressMap();
+            map[String(id)] = { t, u: Date.now() };
+            localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+        } catch {}
+    }
+
+    function clearResumeTime(id) {
+        try {
+            const map = loadProgressMap();
+            if (delete map[String(id)]) {
+                localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+            }
+        } catch {}
+    }
+
+    function flushAllProgress() {
+        document.querySelectorAll('.mv-cell').forEach(cell => {
+            const id = cell.dataset.sceneId;
+            if (!id || filterBackedCells.has(id)) return;
+            const video = cell.querySelector('video');
+            if (!video) return;
+            const src = video.getAttribute('src') || '';
+            let t = video.currentTime;
+            if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+            saveResumeTime(id, t);
+        });
     }
 
     // Mirrors Stash's translateJSON (ui/v2.5/src/models/list-filter/filter.ts):
@@ -359,6 +416,7 @@
         filterBackedCells.delete(String(id));
         disconnectAudio(id);
         seekBases.delete(id);
+        clearResumeTime(id);
         render();
     }
 
@@ -813,9 +871,9 @@
         }
     }
 
-    window.addEventListener('pagehide', flushAllTrackers);
+    window.addEventListener('pagehide', () => { flushAllTrackers(); flushAllProgress(); });
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') flushAllTrackers();
+        if (document.visibilityState === 'hidden') { flushAllTrackers(); flushAllProgress(); }
     });
 
     // �"?�"? Layout �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
@@ -1099,7 +1157,21 @@
 
 
             const video = document.createElement('video');
-            video.src = pickStream(id);
+            const baseSrc = pickStream(id);
+            const resumeTime = isFilterBacked ? 0 : getResumeTime(id);
+            const isTranscodeSrc = baseSrc.includes('.webm') || baseSrc.includes('.mp4');
+            if (resumeTime > 0 && isTranscodeSrc) {
+                const sep = baseSrc.includes('?') ? '&' : '?';
+                seekBases.set(id, resumeTime);
+                video.src = baseSrc + sep + 'start=' + resumeTime;
+            } else {
+                video.src = baseSrc;
+                if (resumeTime > 0) {
+                    video.addEventListener('loadedmetadata', () => {
+                        try { video.currentTime = resumeTime; } catch {}
+                    }, { once: true });
+                }
+            }
             video.autoplay = true;
             video.loop = !isFilterBacked;
             video.muted = !unmutedIds.has(id);
@@ -1133,6 +1205,19 @@
                 }
             };
             video.addEventListener('timeupdate', checkDims);
+
+            if (!isFilterBacked) {
+                let lastProgressSave = 0;
+                video.addEventListener('timeupdate', () => {
+                    const now = performance.now();
+                    if (now - lastProgressSave < PROGRESS_SAVE_INTERVAL_MS) return;
+                    lastProgressSave = now;
+                    const src = video.getAttribute('src') || '';
+                    let t = video.currentTime;
+                    if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+                    saveResumeTime(id, t);
+                });
+            }
 
             const overlay = document.createElement('div');
             overlay.className = 'mv-cell-overlay';
