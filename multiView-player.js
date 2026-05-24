@@ -8,6 +8,8 @@
     const PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
     const PROGRESS_SAVE_INTERVAL_MS = 5000;
     const PROGRESS_MIN_SAVE = 5;
+    const STALL_TIMEOUT_MS = 8000;
+    const MAX_RECOVERIES = 3;
 
     // �"?�"? SVGs �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
@@ -1173,14 +1175,66 @@
                 }
             }
             video.autoplay = true;
-            video.loop = !isFilterBacked;
+            // Native loop is unreliable on transcoded `?start=X` URLs (the
+            // browser resets currentTime to 0 but our seekBase math makes the
+            // playhead appear to jump back to the offset mid-scene). Use an
+            // explicit ended handler instead so direct and transcode behave
+            // identically.
+            video.loop = false;
             video.muted = !unmutedIds.has(id);
             video.playsInline = true;
             video.disablePictureInPicture = true;
 
             if (isFilterBacked) {
                 video.addEventListener('ended', () => advanceFilterCell(id));
+            } else {
+                video.addEventListener('ended', () => seekToStart(id, video));
             }
+
+            // Stall + error recovery. Browsers fire `seeking`/`seeked` cycles
+            // internally during a buffer underrun, which without recovery just
+            // flashes the loading spinner forever. After `waiting`, watch for
+            // `playing` within STALL_TIMEOUT_MS; if it never comes, re-source
+            // from the effective current time. `error` triggers immediate
+            // recovery. We cap retries to avoid loops on dead streams.
+            let stallWatchdog = null;
+            let consecutiveRecoveries = 0;
+            const clearStallWatchdog = () => {
+                if (stallWatchdog) { clearTimeout(stallWatchdog); stallWatchdog = null; }
+            };
+            const recoverVideo = () => {
+                clearStallWatchdog();
+                if (++consecutiveRecoveries > MAX_RECOVERIES) {
+                    if (isFilterBacked) advanceFilterCell(id);
+                    return;
+                }
+                const currentSrc = video.getAttribute('src') || '';
+                let t = video.currentTime;
+                if (currentSrc.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+                const isTranscode = currentSrc.includes('.webm') || currentSrc.includes('.mp4');
+                if (isTranscode) {
+                    const reSrc = currentSrc.split(/[?&]start=/)[0];
+                    const sep = reSrc.includes('?') ? '&' : '?';
+                    seekBases.set(id, t);
+                    video.src = reSrc + sep + 'start=' + t;
+                } else {
+                    video.load();
+                    video.addEventListener('loadedmetadata', () => {
+                        try { video.currentTime = t; } catch {}
+                    }, { once: true });
+                }
+                video.play().catch(() => {});
+            };
+            video._mvClearStall = clearStallWatchdog;
+            video.addEventListener('waiting', () => {
+                clearStallWatchdog();
+                stallWatchdog = setTimeout(recoverVideo, STALL_TIMEOUT_MS);
+            });
+            video.addEventListener('playing', () => {
+                clearStallWatchdog();
+                consecutiveRecoveries = 0;
+            });
+            video.addEventListener('error', () => recoverVideo());
 
             video.addEventListener('loadedmetadata', () => {
                 connectAudio(id, video);
@@ -1434,7 +1488,10 @@
         grid.querySelectorAll('.mv-cell').forEach(cell => {
             if (!queue.includes(cell.dataset.sceneId)) {
                 const v = cell.querySelector('video');
-                if (v) teardownPlayTracking(v);
+                if (v) {
+                    teardownPlayTracking(v);
+                    v._mvClearStall?.();
+                }
                 cell.remove();
             }
         });
