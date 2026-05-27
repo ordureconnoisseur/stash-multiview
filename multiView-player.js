@@ -158,6 +158,42 @@
         }
     }
 
+    // Single rAF tick drives every cell's seekbar fill. Replaces per-video
+    // `timeupdate` handlers, which under a 16-cell grid fire hundreds of
+    // events/sec — each doing a regex + style write — and contend with the
+    // decoder for main-thread time. Browsers throttle rAF when the tab is
+    // hidden so no extra logic is needed there.
+    let progressRafId = null;
+    const lastSeekFillPct = new WeakMap();
+    function tickProgress() {
+        const cells = document.querySelectorAll('.mv-cell');
+        for (const cell of cells) {
+            const id = cell.dataset.sceneId;
+            if (!id) continue;
+            if (activeSeek && activeSeek.id === id) continue;
+            const video = cell.querySelector('video');
+            const fill = cell.querySelector('.mv-seekbar-fill');
+            if (!video || !fill) continue;
+            const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
+            if (!duration) continue;
+            const src = video.getAttribute('src') || '';
+            let current = video.currentTime;
+            if (src.indexOf('start=') !== -1 && /[?&]start=/.test(src)) {
+                current += (seekBases.get(id) || 0);
+            }
+            const pct = current / duration * 100;
+            const last = lastSeekFillPct.get(fill);
+            if (last === undefined || Math.abs(last - pct) > 0.05) {
+                fill.style.width = pct + '%';
+                lastSeekFillPct.set(fill, pct);
+            }
+        }
+        progressRafId = requestAnimationFrame(tickProgress);
+    }
+    function startProgressLoop() {
+        if (progressRafId == null) progressRafId = requestAnimationFrame(tickProgress);
+    }
+
     function flushAllProgress() {
         document.querySelectorAll('.mv-cell').forEach(cell => {
             const id = cell.dataset.sceneId;
@@ -1471,11 +1507,6 @@
                 if (duration) seekFill.style.width = (current / duration * 100) + '%';
             };
 
-            video.addEventListener('timeupdate', () => {
-                if (video.seeking) return;
-                updateProgress();
-            });
-
             video.addEventListener('seeking', () => {
                 if (!cell.querySelector('.mv-loading')) {
                     const s = document.createElement('div');
@@ -1725,6 +1756,7 @@
 
         await loadSceneMeta(queue);
         render();
+        startProgressLoop();
     }
 
     document.addEventListener('DOMContentLoaded', init);
