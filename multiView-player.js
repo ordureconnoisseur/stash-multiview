@@ -8,7 +8,11 @@
     const PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
     const PROGRESS_SAVE_INTERVAL_MS = 5000;
     const PROGRESS_MIN_SAVE = 5;
-    const STALL_TIMEOUT_MS = 8000;
+    // 8s was too aggressive under load: on a contended transcoder the
+    // recovery reload added more work to the already-slow server, making
+    // the next stall more likely. 25s gives ffmpeg time to catch up on
+    // multi-cell grids before we resort to re-sourcing.
+    const STALL_TIMEOUT_MS = 25000;
     const MAX_RECOVERIES = 3;
 
     // ── SVGs ──────────────────────────────────────────────────────────────────
