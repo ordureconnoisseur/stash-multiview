@@ -470,14 +470,19 @@
 
     function seekToStart(id, video) {
         const src = video.getAttribute('src');
-        const isTranscode = src && (src.includes('.webm') || src.includes('.mp4'));
         const wasPlaying = !video.paused;
-        if (isTranscode) {
+        const hasOffset = src && /[?&]start=/.test(src);
+        // Only reload src when there's a `?start=X` offset baked in — that's
+        // the only case where seeking to wall-clock 0 requires a new transcode
+        // segment. For a bare URL (typical fresh playback / end-of-scene
+        // loop), `currentTime = 0` works on both direct and transcode streams
+        // and avoids a full ffmpeg restart every loop.
+        if (hasOffset) {
             const baseSrc = src.split(/[?&]start=/)[0];
             seekBases.set(id, 0);
             video.src = baseSrc;
         } else {
-            video.currentTime = 0;
+            try { video.currentTime = 0; } catch {}
         }
         if (wasPlaying || video.autoplay) video.play();
     }
