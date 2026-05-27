@@ -807,59 +807,39 @@
 
     // ── GraphQL ───────────────────────────────────────────────────────────────
 
-    function storeSceneMeta(id, scene) {
-        let title = scene.title;
-        if (!title) {
-            const path = scene.files?.[0]?.path;
-            title = path ? path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : String(id);
-        }
-        scenes[id] = {
-            id,
-            title,
-            oCount: scene.o_counter ?? 0,
-            duration: scene.files?.[0]?.duration ?? null,
-            streams: parseStreams(scene.sceneStreams)
-        };
-    }
-
-    // Batched scene-meta fetch. Stash's findScenes accepts a scene_ids
-    // list, so 16 cells = 1 GraphQL round trip instead of 16. Order of
-    // the response array isn't guaranteed; we key by id.
-    async function loadSceneMeta(ids) {
-        const toFetch = ids.filter(id => typeof id === 'string' && !scenes[id]);
-        if (!toFetch.length) return;
+    async function fetchSceneMeta(id) {
         try {
             const res = await fetch('/graphql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    query: `query BatchSceneMeta($ids: [Int!], $filter: FindFilterType) {
-                        findScenes(scene_ids: $ids, filter: $filter) {
-                            scenes {
-                                id
-                                title
-                                o_counter
-                                files { path duration }
-                                sceneStreams { url mime_type label }
-                            }
+                    query: `query FindScene($id: ID!) {
+                        findScene(id: $id) {
+                            title
+                            o_counter
+                            files { path duration }
+                            sceneStreams { url mime_type label }
                         }
                     }`,
-                    variables: { ids: toFetch.map(Number), filter: { per_page: -1 } }
+                    variables: { id: String(id) }
                 })
             });
             const data = await res.json();
-            const list = data?.data?.findScenes?.scenes || [];
-            const byId = new Map(list.map(s => [String(s.id), s]));
-            for (const id of toFetch) {
-                const scene = byId.get(id);
-                if (scene) storeSceneMeta(id, scene);
-                else if (!scenes[id]) scenes[id] = { id, title: String(id), streams: {} };
+            const scene = data?.data?.findScene;
+            if (!scene) return;
+            let title = scene.title;
+            if (!title) {
+                const path = scene.files?.[0]?.path;
+                title = path ? path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : String(id);
             }
+            scenes[id] = { id, title, oCount: scene.o_counter ?? 0, duration: scene.files?.[0]?.duration ?? null, streams: parseStreams(scene.sceneStreams) };
         } catch {
-            for (const id of toFetch) {
-                if (!scenes[id]) scenes[id] = { id, title: String(id), streams: {} };
-            }
+            if (!scenes[id]) scenes[id] = { id, title: String(id), streams: {} };
         }
+    }
+
+    async function loadSceneMeta(ids) {
+        await Promise.all(ids.filter(id => typeof id === 'string' && !scenes[id]).map(fetchSceneMeta));
     }
 
     async function incrementO(id) {
