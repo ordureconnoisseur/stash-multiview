@@ -1336,27 +1336,25 @@
             // (cell.querySelector('.mv-loading')?.remove()), which also
             // covers dynamically-added spinners from seeking/recovery.
 
-            // Final fallback: videoWidth/videoHeight are guaranteed non-zero during playback
-            const checkDims = () => {
-                if (video.videoWidth > 0) {
-                    video.removeEventListener('timeupdate', checkDims);
+            // Single timeupdate handler covers both jobs: an orientation
+            // re-check that runs until videoWidth is known (then disables
+            // itself) and a throttled progress save for non-filter cells.
+            let dimsReady = false;
+            let lastProgressSave = 0;
+            video.addEventListener('timeupdate', () => {
+                if (!dimsReady && video.videoWidth > 0) {
+                    dimsReady = true;
                     detectAndApplyOrientation();
                 }
-            };
-            video.addEventListener('timeupdate', checkDims);
-
-            if (!isFilterBacked) {
-                let lastProgressSave = 0;
-                video.addEventListener('timeupdate', () => {
-                    const now = performance.now();
-                    if (now - lastProgressSave < PROGRESS_SAVE_INTERVAL_MS) return;
-                    lastProgressSave = now;
-                    const src = video.getAttribute('src') || '';
-                    let t = video.currentTime;
-                    if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
-                    saveResumeTime(id, t);
-                });
-            }
+                if (isFilterBacked) return;
+                const now = performance.now();
+                if (now - lastProgressSave < PROGRESS_SAVE_INTERVAL_MS) return;
+                lastProgressSave = now;
+                const src = video.getAttribute('src') || '';
+                let t = video.currentTime;
+                if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+                saveResumeTime(id, t);
+            });
 
             const overlay = document.createElement('div');
             overlay.className = 'mv-cell-overlay';
