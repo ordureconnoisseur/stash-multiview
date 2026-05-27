@@ -89,43 +89,69 @@
     }
 
     // Per-scene playback position so reloads resume where the user left off.
-    // TTL-pruned so the map doesn't grow unbounded across many viewing sessions.
-    function loadProgressMap() {
+    // In-memory cache backed by localStorage. The previous implementation
+    // re-parsed and re-serialized the entire JSON blob on every read/write,
+    // which on a 16-cell grid meant ~3 sync localStorage writes/sec plus a
+    // full parse for each cell at render — a real main-thread tax. We load
+    // once, mutate in memory, and coalesce writes on a 5s timer (with an
+    // immediate flush on pagehide/visibility loss for durability).
+    let progressMap = null;
+    let progressMapDirty = false;
+    let progressFlushTimer = null;
+    const PROGRESS_FLUSH_DEBOUNCE_MS = 5000;
+
+    function ensureProgressMap() {
+        if (progressMap !== null) return progressMap;
         try {
-            const map = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+            progressMap = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
             const now = Date.now();
-            let pruned = false;
-            for (const k of Object.keys(map)) {
-                if (!map[k] || now - (map[k].u || 0) > PROGRESS_MAX_AGE_MS) {
-                    delete map[k];
-                    pruned = true;
+            for (const k of Object.keys(progressMap)) {
+                if (!progressMap[k] || now - (progressMap[k].u || 0) > PROGRESS_MAX_AGE_MS) {
+                    delete progressMap[k];
+                    progressMapDirty = true;
                 }
             }
-            if (pruned) localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
-            return map;
-        } catch { return {}; }
+            if (progressMapDirty) flushProgressMap();
+        } catch {
+            progressMap = {};
+        }
+        return progressMap;
+    }
+
+    function flushProgressMap() {
+        if (!progressMapDirty || progressMap === null) return;
+        try {
+            localStorage.setItem(PROGRESS_KEY, JSON.stringify(progressMap));
+            progressMapDirty = false;
+        } catch {}
+    }
+
+    function scheduleProgressFlush() {
+        if (progressFlushTimer) return;
+        progressFlushTimer = setTimeout(() => {
+            progressFlushTimer = null;
+            flushProgressMap();
+        }, PROGRESS_FLUSH_DEBOUNCE_MS);
     }
 
     function getResumeTime(id) {
-        return loadProgressMap()[String(id)]?.t || 0;
+        return ensureProgressMap()[String(id)]?.t || 0;
     }
 
     function saveResumeTime(id, t) {
         if (!(t >= PROGRESS_MIN_SAVE)) return;
-        try {
-            const map = loadProgressMap();
-            map[String(id)] = { t, u: Date.now() };
-            localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
-        } catch {}
+        const map = ensureProgressMap();
+        map[String(id)] = { t, u: Date.now() };
+        progressMapDirty = true;
+        scheduleProgressFlush();
     }
 
     function clearResumeTime(id) {
-        try {
-            const map = loadProgressMap();
-            if (delete map[String(id)]) {
-                localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
-            }
-        } catch {}
+        const map = ensureProgressMap();
+        if (delete map[String(id)]) {
+            progressMapDirty = true;
+            scheduleProgressFlush();
+        }
     }
 
     function flushAllProgress() {
@@ -139,6 +165,7 @@
             if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
             saveResumeTime(id, t);
         });
+        flushProgressMap();
     }
 
     // Mirrors Stash's translateJSON (ui/v2.5/src/models/list-filter/filter.ts):
