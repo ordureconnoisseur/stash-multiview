@@ -1507,7 +1507,7 @@
                 if (currentSrc && currentSrc.match(/[?&]start=/)) {
                     current += (seekBases.get(id) || 0);
                 }
-                if (duration) seekFill.style.width = (current / duration * 100) + '%';
+                if (duration) seekFill.style.transform = 'scaleX(' + (current / duration) + ')';
             };
 
             video.addEventListener('seeking', () => {
