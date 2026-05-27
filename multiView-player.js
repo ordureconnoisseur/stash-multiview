@@ -1108,6 +1108,11 @@
     function commitSeek() {
         if (!activeSeek || activeSeek.ratio == null) return;
         const { video, id, ratio } = activeSeek;
+        // A single click fires both mousedown and mouseup, each of which
+        // calls commitSeek — without this guard the transcoder gets two
+        // back-to-back src reassignments at the same offset for one click.
+        if (activeSeek.lastCommittedRatio === ratio) return;
+        activeSeek.lastCommittedRatio = ratio;
         const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
         if (!duration) return;
 
