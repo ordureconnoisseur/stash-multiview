@@ -1227,10 +1227,21 @@
         // Correct layout immediately if videos already have dimensions (re-render case)
         detectAndApplyOrientation();
 
+        // Snapshot of existing cells so add/cleanup avoid N querySelector + N
+        // queue.includes() calls. Newly created cells in this render get
+        // inserted at lower indices than the current iterator position, so
+        // the refCell forward-search never needs to see them.
+        const existing = new Map();
+        for (const cell of grid.children) {
+            const id = cell.dataset.sceneId;
+            if (id) existing.set(id, cell);
+        }
+        const queueSet = new Set(queue);
+
         // Add new cells at their correct queue position (before removal to avoid layout flash)
         queue.forEach((id, idx) => {
             if (typeof id !== 'string') return;
-            if (grid.querySelector(`.mv-cell[data-scene-id="${id}"]`)) return;
+            if (existing.has(id)) return;
 
             const cell = document.createElement('div');
             const isFilterBacked = filterBackedCells.has(id);
@@ -1556,23 +1567,22 @@
             for (let i = idx + 1; i < queue.length; i++) {
                 const nextId = queue[i];
                 if (typeof nextId !== 'string') continue;
-                const next = grid.querySelector(`.mv-cell[data-scene-id="${nextId}"]`);
+                const next = existing.get(nextId);
                 if (next) { refCell = next; break; }
             }
             grid.insertBefore(cell, refCell);
         });
 
         // Remove cells no longer in queue
-        grid.querySelectorAll('.mv-cell').forEach(cell => {
-            if (!queue.includes(cell.dataset.sceneId)) {
-                const v = cell.querySelector('video');
-                if (v) {
-                    teardownPlayTracking(v);
-                    v._mvCleanup?.();
-                }
-                cell.remove();
+        for (const [id, cell] of existing) {
+            if (queueSet.has(id)) continue;
+            const v = cell.querySelector('video');
+            if (v) {
+                teardownPlayTracking(v);
+                v._mvCleanup?.();
             }
-        });
+            cell.remove();
+        }
     }
 
     function applyQualityToAllCells() {
