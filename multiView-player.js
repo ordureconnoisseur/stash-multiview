@@ -184,7 +184,10 @@
             const pct = current / duration * 100;
             const last = lastSeekFillPct.get(fill);
             if (last === undefined || Math.abs(last - pct) > 0.05) {
-                fill.style.width = pct + '%';
+                // scaleX is composited-only; width is layout-invalidating.
+                // On a 16-cell grid this turns per-frame seekbar updates
+                // from "force layout for each cell" into "compositor only".
+                fill.style.transform = 'scaleX(' + (pct / 100) + ')';
                 lastSeekFillPct.set(fill, pct);
             }
         }
@@ -582,7 +585,7 @@
         // Reflect in the seekbar immediately so the user sees feedback
         // before the (possibly slow) transcode reload completes.
         const fill = document.querySelector(`.mv-cell[data-scene-id="${id}"] .mv-seekbar-fill`);
-        if (fill) fill.style.width = (target / duration * 100) + '%';
+        if (fill) fill.style.transform = 'scaleX(' + (target / duration) + ')';
     }
 
     // ── Stream selection ──────────────────────────────────────────────────────
@@ -1138,7 +1141,7 @@
         const rect = activeSeek.seekbar.getBoundingClientRect();
         const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         activeSeek.ratio = ratio;
-        activeSeek.fill.style.width = (ratio * 100) + '%';
+        activeSeek.fill.style.transform = 'scaleX(' + ratio + ')';
     }
 
     function commitSeek() {
