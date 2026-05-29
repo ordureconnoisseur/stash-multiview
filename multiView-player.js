@@ -27,6 +27,11 @@
     const PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
     const PROGRESS_SAVE_INTERVAL_MS = 5000;
     const PROGRESS_MIN_SAVE = 5;
+    // If a saved position is within this many seconds of the end (or past it —
+    // e.g. the scene was re-encoded shorter since), don't resume: a ?start=
+    // past EOF triggers an immediate error/recovery storm, and resuming into
+    // the last few seconds is pointless. Start fresh instead.
+    const PROGRESS_END_MARGIN = 10;
 
     // �"?�"? SVGs �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
@@ -1215,8 +1220,19 @@
 
             const video = document.createElement('video');
             const baseSrc = pickStream(id);
-            const resumeTime = isFilterBacked ? 0 : getResumeTime(id);
+            let resumeTime = isFilterBacked ? 0 : getResumeTime(id);
+            const dur = scenes[id]?.duration;
+            if (resumeTime > 0 && dur && resumeTime > dur - PROGRESS_END_MARGIN) {
+                // Stale/at-or-past-end offset (scene re-encoded shorter, or saved
+                // right at the end). Start fresh rather than ?start= past EOF.
+                resumeTime = 0;
+                clearResumeTime(id);
+            }
             const isTranscodeSrc = baseSrc.includes('.webm') || baseSrc.includes('.mp4');
+            // A transcode resumed via ?start= only contains [resumeTime, end], so
+            // native loop would replay just that tail forever. Start it unlooped
+            // and re-seat to the full scene when the first partial pass ends.
+            const resumedTranscode = resumeTime > 0 && isTranscodeSrc && !isFilterBacked;
             if (resumeTime > 0 && isTranscodeSrc) {
                 // Transcode resume is reliable via ?start=; currentTime seeking
                 // on a live transcode is not.
@@ -1232,7 +1248,17 @@
                 }
             }
             video.autoplay = true;
-            video.loop = !isFilterBacked;
+            video.loop = !isFilterBacked && !resumedTranscode;
+            if (resumedTranscode) {
+                // First (partial) pass done — reload from the start so subsequent
+                // loops play the whole scene, then hand back to native loop.
+                video.addEventListener('ended', () => {
+                    seekBases.set(id, 0);
+                    video.src = baseSrc;
+                    video.loop = true;
+                    video.play().catch(() => {});
+                }, { once: true });
+            }
             video.muted = !unmutedIds.has(id);
             video.playsInline = true;
             video.disablePictureInPicture = true;
@@ -1290,6 +1316,8 @@
                 const currentSrc = video.getAttribute('src') || '';
                 let t = video.currentTime;
                 if (currentSrc.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+                const dur = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
+                if (dur && t > dur - 0.5) t = Math.max(0, dur - 0.5); // never re-source past EOF
                 const isTranscode = currentSrc.includes('.webm') || currentSrc.includes('.mp4');
                 if (isTranscode) {
                     const reSrc = currentSrc.split(/[?&]start=/)[0];
