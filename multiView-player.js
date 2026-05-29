@@ -11,14 +11,16 @@
     //  - STALL_TIMEOUT_MS: how long a `waiting` may persist before we act.
     //  - RECOVERY_COOLDOWN_MS: minimum gap between two recoveries on one
     //    cell, so rapid waiting/error bursts collapse into one attempt.
-    //  - MAX_RECOVERIES: hard cap; once hit we stop (filter cells advance).
-    //  - SUSTAINED_PLAY_MS: the budget only resets after this much
-    //    *continuous* playback — a stream that plays for a frame then dies
-    //    can no longer reset the counter and loop forever.
+    //  - MAX_RECOVERIES: hard cap; once hit we give up (filter cells advance).
+    //  - SUSTAINED_PLAY_MS: budget is forgiven ONE recovery at a time only
+    //    after this much *uninterrupted* playback (a stall cancels the window).
+    //    Kept above STALL_TIMEOUT_MS so a stream must play substantially longer
+    //    than it takes to detect a stall before earning budget back — a tight
+    //    stall loop therefore walks up to the cap instead of looping forever.
     const STALL_TIMEOUT_MS = 12000;
     const RECOVERY_COOLDOWN_MS = 6000;
     const MAX_RECOVERIES = 3;
-    const SUSTAINED_PLAY_MS = 10000;
+    const SUSTAINED_PLAY_MS = 20000;
     const SEEKING_SPINNER_DELAY_MS = 350;
 
     const PROGRESS_KEY = 'stash-multiview-progress';
@@ -1241,26 +1243,45 @@
 
             // ── Stall recovery (loop-proof) ──────────────────────────────
             // Re-source a stalled/errored stream from the effective playhead,
-            // but bounded: cooldown between attempts, a hard cap, and a budget
-            // that only resets after sustained playback. This is the fix for
-            // the rapid-flashing-spinner crash on transcoder underrun, without
-            // the unbounded recovery loop that froze the grid previously.
+            // bounded so a flaky/dead stream can't hammer the shared transcoder
+            // or strobe the grid:
+            //  - cooldown between attempts (a pending attempt is deferred, not
+            //    dropped, so a dead stream that emits no further events still
+            //    gets retried);
+            //  - MAX_RECOVERIES budget that is FORGIVEN one at a time only after
+            //    an *uninterrupted* healthy window — a stall before the window
+            //    completes forfeits the forgiveness, so a tight stall loop walks
+            //    the budget up to the cap instead of resetting it every cycle;
+            //  - once the budget is exhausted we give up (gaveUp): filter cells
+            //    advance to another scene, fixed cells stop, and no further
+            //    event re-enters recovery.
             let stallWatchdog = null;
             let recoveryCount = 0;
             let lastRecoveryAt = 0;
             let sustainedPlayTimer = null;
             let cellTornDown = false;
+            let gaveUp = false;
             const clearStallWatchdog = () => {
                 if (stallWatchdog) { clearTimeout(stallWatchdog); stallWatchdog = null; }
             };
             const recoverVideo = () => {
-                if (cellTornDown) return;
+                if (cellTornDown || gaveUp) return;
                 clearStallWatchdog();
                 const now = performance.now();
-                if (now - lastRecoveryAt < RECOVERY_COOLDOWN_MS) return;
+                const sinceLast = now - lastRecoveryAt;
+                if (lastRecoveryAt > 0 && sinceLast < RECOVERY_COOLDOWN_MS) {
+                    // Still cooling down. Don't drop this attempt — a dead
+                    // stream often emits no further `waiting`/`error`, so we
+                    // must re-arm the retry ourselves once the cooldown elapses.
+                    stallWatchdog = setTimeout(recoverVideo, RECOVERY_COOLDOWN_MS - sinceLast);
+                    return;
+                }
                 if (recoveryCount >= MAX_RECOVERIES) {
-                    // Give up — stop hammering the transcoder. Filter cells
-                    // can move on to a different scene; fixed cells just stop.
+                    // Out of budget. Stop hammering the transcoder and don't
+                    // re-enter on subsequent events. Filter cells advance to a
+                    // different scene (a fresh cell with a fresh budget); fixed
+                    // cells just stop on the last frame.
+                    gaveUp = true;
                     if (isFilterBacked) advanceFilterCell(id);
                     return;
                 }
@@ -1284,15 +1305,23 @@
                 video.play().catch(() => {});
             };
             video.addEventListener('waiting', () => {
+                if (gaveUp) return;
                 clearStallWatchdog();
+                // A stall forfeits the in-progress healthy window so a tight
+                // stall loop can never earn budget back (see `playing`).
+                clearTimeout(sustainedPlayTimer);
                 stallWatchdog = setTimeout(recoverVideo, STALL_TIMEOUT_MS);
             });
             video.addEventListener('playing', () => {
                 clearStallWatchdog();
-                // Reset the recovery budget only after the stream proves it can
-                // play continuously — a brief blip no longer refills the budget.
+                // Forgive ONE past recovery per uninterrupted healthy window, so
+                // a stream that recovers and then plays well isn't stuck near the
+                // cap — but `waiting` cancels this timer, so a stream that keeps
+                // stalling before the window completes never refills its budget.
                 clearTimeout(sustainedPlayTimer);
-                sustainedPlayTimer = setTimeout(() => { recoveryCount = 0; }, SUSTAINED_PLAY_MS);
+                sustainedPlayTimer = setTimeout(() => {
+                    recoveryCount = Math.max(0, recoveryCount - 1);
+                }, SUSTAINED_PLAY_MS);
             });
             video.addEventListener('error', recoverVideo);
             video._mvCleanup = () => {
