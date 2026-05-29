@@ -56,6 +56,42 @@
     const seekBases = new Map(); // id ��' seconds already consumed before current src load
     const filterBackedCells = new Map(); // resolved sceneId ��' original filter item
 
+    // ── Stream URL + playhead helpers ──────────────────────────────────────
+    // A transcoded stream URL carries a container extension; a direct stream
+    // (/scene/ID/stream) does not. This decides whether seeking must go through
+    // ?start= (transcode, where currentTime seeking is unreliable) or can use
+    // video.currentTime directly (direct stream).
+    function isTranscodeUrl(src) {
+        return !!src && (src.includes('.webm') || src.includes('.mp4'));
+    }
+    // The stream URL with any ?start=/&start= offset stripped off.
+    function stripStart(src) {
+        return (src || '').split(/[?&]start=/)[0];
+    }
+    // Append a start offset to a base URL, choosing ? or & as needed.
+    function withStart(baseSrc, t) {
+        return baseSrc + (baseSrc.includes('?') ? '&' : '?') + 'start=' + t;
+    }
+    // Effective scene playhead: currentTime plus the offset already consumed
+    // before the current transcode src (?start=), tracked in seekBases.
+    function effectivePlayhead(video, id) {
+        const src = video.getAttribute('src') || '';
+        let t = video.currentTime;
+        if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+        return t;
+    }
+    // The buffering spinner overlay, idempotent per cell.
+    function showSpinner(cell) {
+        if (!cell || cell.querySelector('.mv-loading')) return;
+        const s = document.createElement('div');
+        s.className = 'mv-loading';
+        s.innerHTML = '<div class="mv-spinner"></div>';
+        cell.appendChild(s);
+    }
+    function hideSpinner(cell) {
+        cell?.querySelector('.mv-loading')?.remove();
+    }
+
     // �"?�"? Web Audio �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let audioCtx = null;
@@ -412,12 +448,10 @@
 
     function seekToStart(id, video) {
         const src = video.getAttribute('src');
-        const isTranscode = src && (src.includes('.webm') || src.includes('.mp4'));
         const wasPlaying = !video.paused;
-        if (isTranscode) {
-            const baseSrc = src.split(/[?&]start=/)[0];
+        if (isTranscodeUrl(src)) {
             seekBases.set(id, 0);
-            video.src = baseSrc;
+            video.src = stripStart(src);
         } else {
             video.currentTime = 0;
         }
@@ -451,26 +485,13 @@
         if (!duration) return;
 
         const currentSrc = video.getAttribute('src');
-        let effective = video.currentTime;
-        if (currentSrc && currentSrc.match(/[?&]start=/)) {
-            effective += (seekBases.get(id) || 0);
-        }
-        const target = Math.max(0, Math.min(duration - 0.5, effective + delta));
+        const target = Math.max(0, Math.min(duration - 0.5, effectivePlayhead(video, id) + delta));
 
-        const isTranscode = currentSrc && (currentSrc.includes('.webm') || currentSrc.includes('.mp4'));
-        if (isTranscode) {
-            const baseSrc = currentSrc.split(/[?&]start=/)[0];
-            const sep = baseSrc.includes('?') ? '&' : '?';
+        if (isTranscodeUrl(currentSrc)) {
             seekBases.set(id, target);
             const wasPlaying = !video.paused;
-            const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
-            if (cell && !cell.querySelector('.mv-loading')) {
-                const s = document.createElement('div');
-                s.className = 'mv-loading';
-                s.innerHTML = '<div class="mv-spinner"></div>';
-                cell.appendChild(s);
-            }
-            video.src = baseSrc + sep + 'start=' + target;
+            showSpinner(document.querySelector(`.mv-cell[data-scene-id="${id}"]`));
+            video.src = withStart(stripStart(currentSrc), target);
             if (wasPlaying || video.autoplay) video.play().catch(() => {});
         } else {
             video.currentTime = target;
@@ -905,10 +926,7 @@
             if (!id || filterBackedCells.has(id)) return;
             const video = cell.querySelector('video');
             if (!video) return;
-            const src = video.getAttribute('src') || '';
-            let t = video.currentTime;
-            if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
-            setResumeTime(id, t);
+            setResumeTime(id, effectivePlayhead(video, id));
         });
     }
 
@@ -1130,24 +1148,11 @@
         const targetTime = ratio * duration;
         const currentSrc = video.getAttribute('src');
 
-        // Check if it's a transcoded stream
-        const isTranscode = currentSrc && (currentSrc.includes('.webm') || currentSrc.includes('.mp4'));
-
-        if (isTranscode) {
-            const baseSrc = currentSrc.split(/[?&]start=/)[0];
-            const sep = baseSrc.includes('?') ? '&' : '?';
+        if (isTranscodeUrl(currentSrc)) {
             seekBases.set(id, targetTime);
             const wasPlaying = !video.paused;
-            
-            const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
-            if (cell && !cell.querySelector('.mv-loading')) {
-                const s = document.createElement('div');
-                s.className = 'mv-loading';
-                s.innerHTML = '<div class="mv-spinner"></div>';
-                cell.appendChild(s);
-            }
-            
-            video.src = baseSrc + sep + 'start=' + targetTime;
+            showSpinner(document.querySelector(`.mv-cell[data-scene-id="${id}"]`));
+            video.src = withStart(stripStart(currentSrc), targetTime);
             if (wasPlaying || video.autoplay) video.play().catch(() => {});
         } else {
             video.currentTime = targetTime;
@@ -1231,7 +1236,7 @@
                 resumeTime = 0;
                 clearResumeTime(id);
             }
-            const isTranscodeSrc = baseSrc.includes('.webm') || baseSrc.includes('.mp4');
+            const isTranscodeSrc = isTranscodeUrl(baseSrc);
             // A transcode resumed via ?start= only contains [resumeTime, end], so
             // native loop would replay just that tail forever. Start it unlooped
             // and re-seat to the full scene when the first partial pass ends.
@@ -1239,9 +1244,8 @@
             if (resumeTime > 0 && isTranscodeSrc) {
                 // Transcode resume is reliable via ?start=; currentTime seeking
                 // on a live transcode is not.
-                const sep = baseSrc.includes('?') ? '&' : '?';
                 seekBases.set(id, resumeTime);
-                video.src = baseSrc + sep + 'start=' + resumeTime;
+                video.src = withStart(baseSrc, resumeTime);
             } else {
                 video.src = baseSrc;
                 if (resumeTime > 0) {
@@ -1317,16 +1321,12 @@
                 recoveryCount++;
                 lastRecoveryAt = now;
                 const currentSrc = video.getAttribute('src') || '';
-                let t = video.currentTime;
-                if (currentSrc.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+                let t = effectivePlayhead(video, id);
                 const dur = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
                 if (dur && t > dur - 0.5) t = Math.max(0, dur - 0.5); // never re-source past EOF
-                const isTranscode = currentSrc.includes('.webm') || currentSrc.includes('.mp4');
-                if (isTranscode) {
-                    const reSrc = currentSrc.split(/[?&]start=/)[0];
-                    const sep = reSrc.includes('?') ? '&' : '?';
+                if (isTranscodeUrl(currentSrc)) {
                     seekBases.set(id, t);
-                    video.src = reSrc + sep + 'start=' + t;
+                    video.src = withStart(stripStart(currentSrc), t);
                 } else {
                     video.load();
                     video.addEventListener('loadedmetadata', () => {
@@ -1535,12 +1535,7 @@
             const updateProgress = () => {
                 if (activeSeek && activeSeek.id === id) return;
                 const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
-                const currentSrc = video.getAttribute('src');
-                let current = video.currentTime;
-                if (currentSrc && currentSrc.match(/[?&]start=/)) {
-                    current += (seekBases.get(id) || 0);
-                }
-                if (duration) seekFill.style.transform = 'scaleX(' + (current / duration) + ')';
+                if (duration) seekFill.style.transform = 'scaleX(' + (effectivePlayhead(video, id) / duration) + ')';
             };
 
             video.addEventListener('timeupdate', () => {
@@ -1555,24 +1550,17 @@
             let seekingSpinnerTimer = null;
             video.addEventListener('seeking', () => {
                 clearTimeout(seekingSpinnerTimer);
-                seekingSpinnerTimer = setTimeout(() => {
-                    if (!cell.querySelector('.mv-loading')) {
-                        const s = document.createElement('div');
-                        s.className = 'mv-loading';
-                        s.innerHTML = '<div class="mv-spinner"></div>';
-                        cell.appendChild(s);
-                    }
-                }, SEEKING_SPINNER_DELAY_MS);
+                seekingSpinnerTimer = setTimeout(() => showSpinner(cell), SEEKING_SPINNER_DELAY_MS);
             });
 
             video.addEventListener('seeked', () => {
                 clearTimeout(seekingSpinnerTimer);
-                cell.querySelector('.mv-loading')?.remove();
+                hideSpinner(cell);
                 updateProgress();
             });
 
             video.addEventListener('canplay', () => {
-                cell.querySelector('.mv-loading')?.remove();
+                hideSpinner(cell);
             });
 
             seekbar.addEventListener('mousedown', e => {
@@ -1638,27 +1626,19 @@
 
             const optimalSrc = pickStream(id);
             const currentSrc = video.getAttribute('src') || '';
-            const baseSrc = currentSrc.split(/[?&]start=/)[0];
+            const baseSrc = stripStart(currentSrc);
 
             if (!baseSrc || baseSrc === optimalSrc) return;
 
-            let currentTime = video.currentTime;
-            if (currentSrc.match(/[?&]start=/)) currentTime += (seekBases.get(id) || 0);
-
+            const currentTime = effectivePlayhead(video, id);
             const wasPlaying = !video.paused;
-            const isTranscode = optimalSrc.includes('.webm') || optimalSrc.includes('.mp4');
+            const isTranscode = isTranscodeUrl(optimalSrc);
 
-            if (!cell.querySelector('.mv-loading')) {
-                const s = document.createElement('div');
-                s.className = 'mv-loading';
-                s.innerHTML = '<div class="mv-spinner"></div>';
-                cell.appendChild(s);
-            }
+            showSpinner(cell);
 
             if (isTranscode && currentTime > 0) {
-                const sep = optimalSrc.includes('?') ? '&' : '?';
                 seekBases.set(id, currentTime);
-                video.src = optimalSrc + sep + 'start=' + currentTime;
+                video.src = withStart(optimalSrc, currentTime);
             } else {
                 seekBases.set(id, 0);
                 video.src = optimalSrc;
