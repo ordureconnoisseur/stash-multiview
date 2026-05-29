@@ -22,6 +22,11 @@
     const MAX_RECOVERIES = 3;
     const SUSTAINED_PLAY_MS = 20000;
     const SEEKING_SPINNER_DELAY_MS = 350;
+    // When a render adds several cells at once (initial load, roulette roll),
+    // ramp their stream starts apart by this much per cell instead of firing
+    // all N transcode requests at the same instant — a simultaneous burst
+    // saturates a slow link / the shared transcoder and makes every cell stall.
+    const STREAM_STAGGER_MS = 200;
 
     const PROGRESS_KEY = 'stash-multiview-progress';
     const PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1216,10 +1221,12 @@
         const queueSet = new Set(queue);
 
         // Add new cells at their correct queue position (before removal to avoid layout flash)
+        let newCellOrdinal = 0; // counts only cells created this pass, for stream stagger
         queue.forEach((id, idx) => {
             if (typeof id !== 'string') return;
             if (existing.has(id)) return;
 
+            const staggerSlot = newCellOrdinal++;
             const cell = document.createElement('div');
             const isFilterBacked = filterBackedCells.has(id);
             cell.className = 'mv-cell' + (isFilterBacked ? ' mv-cell--filter' : '');
@@ -1241,19 +1248,24 @@
             // native loop would replay just that tail forever. Start it unlooped
             // and re-seat to the full scene when the first partial pass ends.
             const resumedTranscode = resumeTime > 0 && isTranscodeSrc && !isFilterBacked;
-            if (resumeTime > 0 && isTranscodeSrc) {
-                // Transcode resume is reliable via ?start=; currentTime seeking
-                // on a live transcode is not.
-                seekBases.set(id, resumeTime);
-                video.src = withStart(baseSrc, resumeTime);
-            } else {
-                video.src = baseSrc;
-                if (resumeTime > 0) {
-                    video.addEventListener('loadedmetadata', () => {
-                        try { video.currentTime = resumeTime; } catch {}
-                    }, { once: true });
+            // Assigning src kicks off the load/transcode. Deferred + staggered
+            // (invoked from the staggered start below) so a full grid doesn't
+            // fire every transcode request at the same instant.
+            const applyInitialSrc = () => {
+                if (resumeTime > 0 && isTranscodeSrc) {
+                    // Transcode resume is reliable via ?start=; currentTime seeking
+                    // on a live transcode is not.
+                    seekBases.set(id, resumeTime);
+                    video.src = withStart(baseSrc, resumeTime);
+                } else {
+                    video.src = baseSrc;
+                    if (resumeTime > 0) {
+                        video.addEventListener('loadedmetadata', () => {
+                            try { video.currentTime = resumeTime; } catch {}
+                        }, { once: true });
+                    }
                 }
-            }
+            };
             video.autoplay = true;
             video.loop = !isFilterBacked && !resumedTranscode;
             if (resumedTranscode) {
@@ -1601,6 +1613,16 @@
             // queue (two filter slots resolving to the same scene, etc.) is
             // skipped instead of spawning a second cell with the same id.
             existing.set(id, cell);
+
+            // Start the stream, staggered. The cell is in the DOM and fully
+            // wired by now; if it's torn down during its delay (queue changed),
+            // _mvCleanup sets cellTornDown and we skip starting a dead stream.
+            const startDelay = staggerSlot * STREAM_STAGGER_MS;
+            if (startDelay > 0) {
+                setTimeout(() => { if (!cellTornDown) applyInitialSrc(); }, startDelay);
+            } else {
+                applyInitialSrc();
+            }
         });
 
         // Remove cells no longer in queue. Walk the real DOM (not the id-keyed
