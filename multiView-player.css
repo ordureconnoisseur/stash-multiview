@@ -143,6 +143,7 @@ html, body {
     border-radius: 4px;
     overflow: hidden;
     cursor: pointer;
+    contain: layout paint style;
 }
 
 .mv-cell.audio-active {
