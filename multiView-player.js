@@ -5,6 +5,22 @@
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
     const SETTINGS_KEY = 'stash-multiview-settings';
 
+    // Stall recovery tuning. A stalled transcode is re-sourced from the
+    // current playhead, but bounded so a permanently-dead stream can't
+    // hammer the shared transcoder into a freeze:
+    //  - STALL_TIMEOUT_MS: how long a `waiting` may persist before we act.
+    //  - RECOVERY_COOLDOWN_MS: minimum gap between two recoveries on one
+    //    cell, so rapid waiting/error bursts collapse into one attempt.
+    //  - MAX_RECOVERIES: hard cap; once hit we stop (filter cells advance).
+    //  - SUSTAINED_PLAY_MS: the budget only resets after this much
+    //    *continuous* playback — a stream that plays for a frame then dies
+    //    can no longer reset the counter and loop forever.
+    const STALL_TIMEOUT_MS = 12000;
+    const RECOVERY_COOLDOWN_MS = 6000;
+    const MAX_RECOVERIES = 3;
+    const SUSTAINED_PLAY_MS = 10000;
+    const SEEKING_SPINNER_DELAY_MS = 350;
+
     // �"?�"? SVGs �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     const ICON_VOLUME_ON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" aria-hidden="true"><path fill="currentColor" d="M533.6 32.5C598.5 85.2 640 165.8 640 256s-41.5 170.7-106.4 223.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C557.5 398.2 592 331.2 592 256s-34.5-142.2-88.7-186.2c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM473.1 107c43.2 35.2 70.9 88.9 70.9 149s-27.7 113.8-70.9 149c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C475.3 341.3 496 301.1 496 256s-20.7-85.3-53.2-111.8c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zm-60.5 74.5C434.1 199.1 448 225.9 448 256s-13.9 56.9-35.4 74.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C393.1 284.4 400 271 400 256s-6.9-28.4-17.7-37.3c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM301.1 34.8C312.6 40 320 51.4 320 64V448c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352H64c-35.3 0-64-28.7-64-64V224c0-35.3 28.7-64 64-64h67.8L266.7 40.1c9.4-8.4 22.9-10.7 34.4-5.3z"/></svg>`;
@@ -1110,6 +1126,69 @@
                 video.addEventListener('ended', () => advanceFilterCell(id));
             }
 
+            // ── Stall recovery (loop-proof) ──────────────────────────────
+            // Re-source a stalled/errored stream from the effective playhead,
+            // but bounded: cooldown between attempts, a hard cap, and a budget
+            // that only resets after sustained playback. This is the fix for
+            // the rapid-flashing-spinner crash on transcoder underrun, without
+            // the unbounded recovery loop that froze the grid previously.
+            let stallWatchdog = null;
+            let recoveryCount = 0;
+            let lastRecoveryAt = 0;
+            let sustainedPlayTimer = null;
+            let cellTornDown = false;
+            const clearStallWatchdog = () => {
+                if (stallWatchdog) { clearTimeout(stallWatchdog); stallWatchdog = null; }
+            };
+            const recoverVideo = () => {
+                if (cellTornDown) return;
+                clearStallWatchdog();
+                const now = performance.now();
+                if (now - lastRecoveryAt < RECOVERY_COOLDOWN_MS) return;
+                if (recoveryCount >= MAX_RECOVERIES) {
+                    // Give up — stop hammering the transcoder. Filter cells
+                    // can move on to a different scene; fixed cells just stop.
+                    if (isFilterBacked) advanceFilterCell(id);
+                    return;
+                }
+                recoveryCount++;
+                lastRecoveryAt = now;
+                const currentSrc = video.getAttribute('src') || '';
+                let t = video.currentTime;
+                if (currentSrc.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+                const isTranscode = currentSrc.includes('.webm') || currentSrc.includes('.mp4');
+                if (isTranscode) {
+                    const reSrc = currentSrc.split(/[?&]start=/)[0];
+                    const sep = reSrc.includes('?') ? '&' : '?';
+                    seekBases.set(id, t);
+                    video.src = reSrc + sep + 'start=' + t;
+                } else {
+                    video.load();
+                    video.addEventListener('loadedmetadata', () => {
+                        try { video.currentTime = t; } catch {}
+                    }, { once: true });
+                }
+                video.play().catch(() => {});
+            };
+            video.addEventListener('waiting', () => {
+                clearStallWatchdog();
+                stallWatchdog = setTimeout(recoverVideo, STALL_TIMEOUT_MS);
+            });
+            video.addEventListener('playing', () => {
+                clearStallWatchdog();
+                // Reset the recovery budget only after the stream proves it can
+                // play continuously — a brief blip no longer refills the budget.
+                clearTimeout(sustainedPlayTimer);
+                sustainedPlayTimer = setTimeout(() => { recoveryCount = 0; }, SUSTAINED_PLAY_MS);
+            });
+            video.addEventListener('error', recoverVideo);
+            video._mvCleanup = () => {
+                cellTornDown = true;
+                clearStallWatchdog();
+                clearTimeout(sustainedPlayTimer);
+                try { video.pause(); video.removeAttribute('src'); video.load(); } catch {}
+            };
+
             video.addEventListener('loadedmetadata', () => {
                 connectAudio(id, video);
                 detectAndApplyOrientation();
@@ -1291,16 +1370,25 @@
                 updateProgress();
             });
 
+            // Debounced spinner: the browser fires rapid seeking/seeked
+            // cycles during a buffer underrun. Showing/hiding the spinner on
+            // each one produced the rapid-flashing crash look. Only show it if
+            // the seek state persists past a short delay.
+            let seekingSpinnerTimer = null;
             video.addEventListener('seeking', () => {
-                if (!cell.querySelector('.mv-loading')) {
-                    const s = document.createElement('div');
-                    s.className = 'mv-loading';
-                    s.innerHTML = '<div class="mv-spinner"></div>';
-                    cell.appendChild(s);
-                }
+                clearTimeout(seekingSpinnerTimer);
+                seekingSpinnerTimer = setTimeout(() => {
+                    if (!cell.querySelector('.mv-loading')) {
+                        const s = document.createElement('div');
+                        s.className = 'mv-loading';
+                        s.innerHTML = '<div class="mv-spinner"></div>';
+                        cell.appendChild(s);
+                    }
+                }, SEEKING_SPINNER_DELAY_MS);
             });
 
             video.addEventListener('seeked', () => {
+                clearTimeout(seekingSpinnerTimer);
                 cell.querySelector('.mv-loading')?.remove();
                 updateProgress();
             });
@@ -1349,7 +1437,10 @@
         grid.querySelectorAll('.mv-cell').forEach(cell => {
             if (!queue.includes(cell.dataset.sceneId)) {
                 const v = cell.querySelector('video');
-                if (v) teardownPlayTracking(v);
+                if (v) {
+                    teardownPlayTracking(v);
+                    v._mvCleanup?.();
+                }
                 cell.remove();
             }
         });
