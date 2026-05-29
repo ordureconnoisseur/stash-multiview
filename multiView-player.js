@@ -892,7 +892,10 @@
 
     function clearResumeTime(id) {
         const map = ensureProgressMap();
-        if (delete map[String(id)]) progressMapDirty = true;
+        const key = String(id);
+        // `delete` returns true even for an absent key, so check presence to
+        // avoid marking the map dirty (and re-writing localStorage) for no-ops.
+        if (key in map) { delete map[key]; progressMapDirty = true; }
     }
 
     // Snapshot every non-filter cell's effective playhead into the map.
@@ -1356,6 +1359,11 @@
                 cellTornDown = true;
                 clearStallWatchdog();
                 clearTimeout(sustainedPlayTimer);
+                clearTimeout(seekingSpinnerTimer); // declared below in the same cell scope; only ever called on a later render's teardown
+                // Cancel any queued wheel-seek so it can't fire applyWheelSeek on
+                // this now-detached video and resurrect a seekBases entry.
+                const pw = wheelPending.get(id);
+                if (pw) { clearTimeout(pw.timeout); wheelPending.delete(id); }
                 try { video.pause(); video.removeAttribute('src'); video.load(); } catch {}
             };
 
