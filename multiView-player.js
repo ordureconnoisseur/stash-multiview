@@ -21,6 +21,11 @@
     const SUSTAINED_PLAY_MS = 10000;
     const SEEKING_SPINNER_DELAY_MS = 350;
 
+    const PROGRESS_KEY = 'stash-multiview-progress';
+    const PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    const PROGRESS_SAVE_INTERVAL_MS = 5000;
+    const PROGRESS_MIN_SAVE = 5;
+
     // �"?�"? SVGs �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     const ICON_VOLUME_ON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" aria-hidden="true"><path fill="currentColor" d="M533.6 32.5C598.5 85.2 640 165.8 640 256s-41.5 170.7-106.4 223.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C557.5 398.2 592 331.2 592 256s-34.5-142.2-88.7-186.2c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM473.1 107c43.2 35.2 70.9 88.9 70.9 149s-27.7 113.8-70.9 149c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C475.3 341.3 496 301.1 496 256s-20.7-85.3-53.2-111.8c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zm-60.5 74.5C434.1 199.1 448 225.9 448 256s-13.9 56.9-35.4 74.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C393.1 284.4 400 271 400 256s-6.9-28.4-17.7-37.3c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM301.1 34.8C312.6 40 320 51.4 320 64V448c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352H64c-35.3 0-64-28.7-64-64V224c0-35.3 28.7-64 64-64h67.8L266.7 40.1c9.4-8.4 22.9-10.7 34.4-5.3z"/></svg>`;
@@ -375,6 +380,7 @@
         filterBackedCells.delete(String(id));
         disconnectAudio(id);
         seekBases.delete(id);
+        clearResumeTime(id);
         render();
     }
 
@@ -829,9 +835,84 @@
         }
     }
 
-    window.addEventListener('pagehide', flushAllTrackers);
+    // ── Resume position ────────────────────────────────────────────────────
+    // Per-scene playback position persisted to localStorage so a reload
+    // resumes where you left off. In-memory map + a single interval that
+    // snapshots all cells every PROGRESS_SAVE_INTERVAL_MS; localStorage is
+    // written at most once per tick (plus an immediate flush on pagehide /
+    // visibility-hidden). Filter/roulette cells are excluded by design —
+    // their position has no meaning across reloads. TTL-pruned at 7 days.
+    let progressMap = null;
+    let progressMapDirty = false;
+    let progressSaveTimer = null;
+
+    function ensureProgressMap() {
+        if (progressMap !== null) return progressMap;
+        try {
+            progressMap = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+            const now = Date.now();
+            for (const k of Object.keys(progressMap)) {
+                if (!progressMap[k] || now - (progressMap[k].u || 0) > PROGRESS_MAX_AGE_MS) {
+                    delete progressMap[k];
+                    progressMapDirty = true;
+                }
+            }
+            if (progressMapDirty) flushProgressMap();
+        } catch {
+            progressMap = {};
+        }
+        return progressMap;
+    }
+
+    function flushProgressMap() {
+        if (!progressMapDirty || progressMap === null) return;
+        try {
+            localStorage.setItem(PROGRESS_KEY, JSON.stringify(progressMap));
+            progressMapDirty = false;
+        } catch {}
+    }
+
+    function getResumeTime(id) {
+        return ensureProgressMap()[String(id)]?.t || 0;
+    }
+
+    function setResumeTime(id, t) {
+        if (!(t >= PROGRESS_MIN_SAVE)) return;
+        const map = ensureProgressMap();
+        map[String(id)] = { t, u: Date.now() };
+        progressMapDirty = true;
+    }
+
+    function clearResumeTime(id) {
+        const map = ensureProgressMap();
+        if (delete map[String(id)]) progressMapDirty = true;
+    }
+
+    // Snapshot every non-filter cell's effective playhead into the map.
+    function snapshotAllProgress() {
+        document.querySelectorAll('.mv-cell').forEach(cell => {
+            const id = cell.dataset.sceneId;
+            if (!id || filterBackedCells.has(id)) return;
+            const video = cell.querySelector('video');
+            if (!video) return;
+            const src = video.getAttribute('src') || '';
+            let t = video.currentTime;
+            if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
+            setResumeTime(id, t);
+        });
+    }
+
+    function startProgressSaveLoop() {
+        if (progressSaveTimer) return;
+        progressSaveTimer = setInterval(() => {
+            snapshotAllProgress();
+            flushProgressMap();
+        }, PROGRESS_SAVE_INTERVAL_MS);
+    }
+
+    window.addEventListener('pagehide', () => { flushAllTrackers(); snapshotAllProgress(); flushProgressMap(); });
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') flushAllTrackers();
+        if (document.visibilityState === 'hidden') { flushAllTrackers(); snapshotAllProgress(); flushProgressMap(); }
     });
 
     // �"?�"? Layout �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
@@ -1131,7 +1212,23 @@
 
 
             const video = document.createElement('video');
-            video.src = pickStream(id);
+            const baseSrc = pickStream(id);
+            const resumeTime = isFilterBacked ? 0 : getResumeTime(id);
+            const isTranscodeSrc = baseSrc.includes('.webm') || baseSrc.includes('.mp4');
+            if (resumeTime > 0 && isTranscodeSrc) {
+                // Transcode resume is reliable via ?start=; currentTime seeking
+                // on a live transcode is not.
+                const sep = baseSrc.includes('?') ? '&' : '?';
+                seekBases.set(id, resumeTime);
+                video.src = baseSrc + sep + 'start=' + resumeTime;
+            } else {
+                video.src = baseSrc;
+                if (resumeTime > 0) {
+                    video.addEventListener('loadedmetadata', () => {
+                        try { video.currentTime = resumeTime; } catch {}
+                    }, { once: true });
+                }
+            }
             video.autoplay = true;
             video.loop = !isFilterBacked;
             video.muted = !unmutedIds.has(id);
@@ -1643,6 +1740,7 @@
 
         await loadSceneMeta(queue);
         render();
+        startProgressSaveLoop();
     }
 
     document.addEventListener('DOMContentLoaded', init);
