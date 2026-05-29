@@ -1196,7 +1196,7 @@
         const existing = new Map();
         for (const cell of grid.children) {
             const cid = cell.dataset.sceneId;
-            if (cid) existing.set(cid, cell);
+            if (cid && !existing.has(cid)) existing.set(cid, cell); // canonical = first cell per id
         }
         const queueSet = new Set(queue);
 
@@ -1544,11 +1544,18 @@
                 if (next) { refCell = next; break; }
             }
             grid.insertBefore(cell, refCell);
+            // Register the new cell so a duplicate of this id later in the same
+            // queue (two filter slots resolving to the same scene, etc.) is
+            // skipped instead of spawning a second cell with the same id.
+            existing.set(id, cell);
         });
 
-        // Remove cells no longer in queue
-        for (const [id, cell] of existing) {
-            if (queueSet.has(id)) continue;
+        // Remove cells no longer in queue. Walk the real DOM (not the id-keyed
+        // `existing` map) so any stray duplicate-id cell is also torn down and
+        // can't leak its <video>/watchdog. Keep only the canonical cell per id.
+        for (const cell of Array.from(grid.children)) {
+            const cid = cell.dataset.sceneId;
+            if (cid && queueSet.has(cid) && existing.get(cid) === cell) continue;
             const v = cell.querySelector('video');
             if (v) {
                 teardownPlayTracking(v);
