@@ -364,9 +364,11 @@ html, body {
 
 .mv-seekbar-fill {
     height: 100%;
+    width: 100%;
     background: var(--mv-accent);
-    width: 0%;
     pointer-events: none;
+    transform: scaleX(0);
+    transform-origin: left center;
 }
 
 /* ── Volume popup ──────────────────────────────────────────────────────────── */

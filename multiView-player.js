@@ -472,7 +472,7 @@
         // Reflect in the seekbar immediately so the user sees feedback
         // before the (possibly slow) transcode reload completes.
         const fill = document.querySelector(`.mv-cell[data-scene-id="${id}"] .mv-seekbar-fill`);
-        if (fill) fill.style.width = (target / duration * 100) + '%';
+        if (fill) fill.style.transform = 'scaleX(' + (target / duration) + ')';
     }
 
     // �"?�"? Stream selection �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
@@ -1103,7 +1103,7 @@
         const rect = activeSeek.seekbar.getBoundingClientRect();
         const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         activeSeek.ratio = ratio;
-        activeSeek.fill.style.width = (ratio * 100) + '%';
+        activeSeek.fill.style.transform = 'scaleX(' + ratio + ')';
     }
 
     function commitSeek() {
@@ -1475,7 +1475,7 @@
                 if (currentSrc && currentSrc.match(/[?&]start=/)) {
                     current += (seekBases.get(id) || 0);
                 }
-                if (duration) seekFill.style.width = (current / duration * 100) + '%';
+                if (duration) seekFill.style.transform = 'scaleX(' + (current / duration) + ')';
             };
 
             video.addEventListener('timeupdate', () => {
