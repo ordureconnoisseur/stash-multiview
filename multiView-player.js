@@ -4,18 +4,8 @@
     const STORAGE_KEY = 'stash-multiview-queue';
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
     const SETTINGS_KEY = 'stash-multiview-settings';
-    const PROGRESS_KEY = 'stash-multiview-progress';
-    const PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-    const PROGRESS_SAVE_INTERVAL_MS = 5000;
-    const PROGRESS_MIN_SAVE = 5;
-    // 8s was too aggressive under load: on a contended transcoder the
-    // recovery reload added more work to the already-slow server, making
-    // the next stall more likely. 25s gives ffmpeg time to catch up on
-    // multi-cell grids before we resort to re-sourcing.
-    const STALL_TIMEOUT_MS = 25000;
-    const MAX_RECOVERIES = 3;
 
-    // ── SVGs ──────────────────────────────────────────────────────────────────
+    // �"?�"? SVGs �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     const ICON_VOLUME_ON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" aria-hidden="true"><path fill="currentColor" d="M533.6 32.5C598.5 85.2 640 165.8 640 256s-41.5 170.7-106.4 223.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C557.5 398.2 592 331.2 592 256s-34.5-142.2-88.7-186.2c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM473.1 107c43.2 35.2 70.9 88.9 70.9 149s-27.7 113.8-70.9 149c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C475.3 341.3 496 301.1 496 256s-20.7-85.3-53.2-111.8c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zm-60.5 74.5C434.1 199.1 448 225.9 448 256s-13.9 56.9-35.4 74.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C393.1 284.4 400 271 400 256s-6.9-28.4-17.7-37.3c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM301.1 34.8C312.6 40 320 51.4 320 64V448c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352H64c-35.3 0-64-28.7-64-64V224c0-35.3 28.7-64 64-64h67.8L266.7 40.1c9.4-8.4 22.9-10.7 34.4-5.3z"/></svg>`;
 
@@ -29,19 +19,19 @@
     const ICON_DICE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M13.763,0 L2.178,0 C0.998,0 0.043,0.966 0.043,2.155 L0.043,13.845 C0.043,15.034 0.998,15.999 2.178,15.999 L13.763,15.999 C14.944,15.999 15.899,15.034 15.899,13.845 L15.899,2.155 C15.898,0.966 14.943,0 13.763,0 Z M4.002,6.153 C2.856,6.153 1.927,5.202 1.927,4.03 C1.927,2.858 2.856,1.907 4.002,1.907 C5.148,1.907 6.078,2.858 6.078,4.03 C6.078,5.202 5.148,6.153 4.002,6.153 Z M12.002,14.153 C10.856,14.153 9.927,13.202 9.927,12.03 C9.927,10.858 10.856,9.907 12.002,9.907 C13.148,9.907 14.078,10.858 14.078,12.03 C14.078,13.202 13.148,14.153 12.002,14.153 Z M8.002,10.153 C6.856,10.153 5.927,9.202 5.927,8.03 C5.927,6.858 6.856,5.907 8.002,5.907 C9.148,5.907 10.078,6.858 10.078,8.03 C10.078,9.202 9.148,10.153 8.002,10.153 Z"/></svg>`;
     const ICON_PREV = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" aria-hidden="true"><path fill="currentColor" d="M267.5 440.6c9.5 7.9 22.8 9.7 34.1 4.4s18.4-16.6 18.4-29V96c0-12.4-7.2-23.7-18.4-29s-24.5-3.4-34.1 4.4l-192 160L64 241V96c0-17.7-14.3-32-32-32S0 78.3 0 96V416c0 17.7 14.3 32 32 32s32-14.3 32-32V271l11.5 9.6 192 160z"/></svg>`;
     const ICON_NEXT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" aria-hidden="true"><path fill="currentColor" d="M52.5 440.6c-9.5 7.9-22.8 9.7-34.1 4.4S0 428.4 0 416V96C0 83.6 7.2 72.3 18.4 67s24.5-3.4 34.1 4.4l192 160L256 241V96c0-17.7 14.3-32 32-32s32 14.3 32 32V416c0 17.7-14.3 32-32 32s-32-14.3-32-32V271l-11.5 9.6-192 160z"/></svg>`;
-    // ── State ─────────────────────────────────────────────────────────────────
+    // �"?�"? State �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let queue = [];
-    let scenes = {};         // id → { id, title, streams }
+    let scenes = {};         // id ��' { id, title, streams }
     const unmutedIds = new Set();
     let openPopupId = null;
-    const seekBases = new Map(); // id → seconds already consumed before current src load
-    const filterBackedCells = new Map(); // resolved sceneId → original filter item
+    const seekBases = new Map(); // id ��' seconds already consumed before current src load
+    const filterBackedCells = new Map(); // resolved sceneId ��' original filter item
 
-    // ── Web Audio ─────────────────────────────────────────────────────────────
+    // �"?�"? Web Audio �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let audioCtx = null;
-    const cellGains = new Map(); // id → GainNode
+    const cellGains = new Map(); // id ��' GainNode
 
     function getAudioCtx() {
         if (!audioCtx) {
@@ -63,7 +53,7 @@
             gain.connect(ctx.destination);
             cellGains.set(id, gain);
         } catch (e) {
-            // Silently ignore — audio still works via video.volume fallback
+            // Silently ignore �?" audio still works via video.volume fallback
         }
     }
 
@@ -81,7 +71,7 @@
         }
     }
 
-    // ── Queue ─────────────────────────────────────────────────────────────────
+    // �"?�"? Queue �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function getQueue() {
         try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
@@ -90,125 +80,6 @@
 
     function saveQueue(q) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
-    }
-
-    // Per-scene playback position so reloads resume where the user left off.
-    // In-memory cache backed by localStorage. The previous implementation
-    // re-parsed and re-serialized the entire JSON blob on every read/write,
-    // which on a 16-cell grid meant ~3 sync localStorage writes/sec plus a
-    // full parse for each cell at render — a real main-thread tax. We load
-    // once, mutate in memory, and coalesce writes on a 5s timer (with an
-    // immediate flush on pagehide/visibility loss for durability).
-    let progressMap = null;
-    let progressMapDirty = false;
-    let progressFlushTimer = null;
-    const PROGRESS_FLUSH_DEBOUNCE_MS = 5000;
-
-    function ensureProgressMap() {
-        if (progressMap !== null) return progressMap;
-        try {
-            progressMap = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
-            const now = Date.now();
-            for (const k of Object.keys(progressMap)) {
-                if (!progressMap[k] || now - (progressMap[k].u || 0) > PROGRESS_MAX_AGE_MS) {
-                    delete progressMap[k];
-                    progressMapDirty = true;
-                }
-            }
-            if (progressMapDirty) flushProgressMap();
-        } catch {
-            progressMap = {};
-        }
-        return progressMap;
-    }
-
-    function flushProgressMap() {
-        if (!progressMapDirty || progressMap === null) return;
-        try {
-            localStorage.setItem(PROGRESS_KEY, JSON.stringify(progressMap));
-            progressMapDirty = false;
-        } catch {}
-    }
-
-    function scheduleProgressFlush() {
-        if (progressFlushTimer) return;
-        progressFlushTimer = setTimeout(() => {
-            progressFlushTimer = null;
-            flushProgressMap();
-        }, PROGRESS_FLUSH_DEBOUNCE_MS);
-    }
-
-    function getResumeTime(id) {
-        return ensureProgressMap()[String(id)]?.t || 0;
-    }
-
-    function saveResumeTime(id, t) {
-        if (!(t >= PROGRESS_MIN_SAVE)) return;
-        const map = ensureProgressMap();
-        map[String(id)] = { t, u: Date.now() };
-        progressMapDirty = true;
-        scheduleProgressFlush();
-    }
-
-    function clearResumeTime(id) {
-        const map = ensureProgressMap();
-        if (delete map[String(id)]) {
-            progressMapDirty = true;
-            scheduleProgressFlush();
-        }
-    }
-
-    // Single rAF tick drives every cell's seekbar fill. Replaces per-video
-    // `timeupdate` handlers, which under a 16-cell grid fire hundreds of
-    // events/sec — each doing a regex + style write — and contend with the
-    // decoder for main-thread time. Browsers throttle rAF when the tab is
-    // hidden so no extra logic is needed there.
-    let progressRafId = null;
-    const lastSeekFillPct = new WeakMap();
-    function tickProgress() {
-        const cells = document.querySelectorAll('.mv-cell');
-        for (const cell of cells) {
-            const id = cell.dataset.sceneId;
-            if (!id) continue;
-            if (activeSeek && activeSeek.id === id) continue;
-            const video = cell.querySelector('video');
-            const fill = cell.querySelector('.mv-seekbar-fill');
-            if (!video || !fill) continue;
-            const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
-            if (!duration) continue;
-            const src = video.getAttribute('src') || '';
-            let current = video.currentTime;
-            if (src.indexOf('start=') !== -1 && /[?&]start=/.test(src)) {
-                current += (seekBases.get(id) || 0);
-            }
-            const pct = current / duration * 100;
-            const last = lastSeekFillPct.get(fill);
-            if (last === undefined || Math.abs(last - pct) > 0.05) {
-                // scaleX is composited-only; width is layout-invalidating.
-                // On a 16-cell grid this turns per-frame seekbar updates
-                // from "force layout for each cell" into "compositor only".
-                fill.style.transform = 'scaleX(' + (pct / 100) + ')';
-                lastSeekFillPct.set(fill, pct);
-            }
-        }
-        progressRafId = requestAnimationFrame(tickProgress);
-    }
-    function startProgressLoop() {
-        if (progressRafId == null) progressRafId = requestAnimationFrame(tickProgress);
-    }
-
-    function flushAllProgress() {
-        document.querySelectorAll('.mv-cell').forEach(cell => {
-            const id = cell.dataset.sceneId;
-            if (!id || filterBackedCells.has(id)) return;
-            const video = cell.querySelector('video');
-            if (!video) return;
-            const src = video.getAttribute('src') || '';
-            let t = video.currentTime;
-            if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
-            saveResumeTime(id, t);
-        });
-        flushProgressMap();
     }
 
     // Mirrors Stash's translateJSON (ui/v2.5/src/models/list-filter/filter.ts):
@@ -488,7 +359,6 @@
         filterBackedCells.delete(String(id));
         disconnectAudio(id);
         seekBases.delete(id);
-        clearResumeTime(id);
         render();
     }
 
@@ -513,19 +383,14 @@
 
     function seekToStart(id, video) {
         const src = video.getAttribute('src');
+        const isTranscode = src && (src.includes('.webm') || src.includes('.mp4'));
         const wasPlaying = !video.paused;
-        const hasOffset = src && /[?&]start=/.test(src);
-        // Only reload src when there's a `?start=X` offset baked in — that's
-        // the only case where seeking to wall-clock 0 requires a new transcode
-        // segment. For a bare URL (typical fresh playback / end-of-scene
-        // loop), `currentTime = 0` works on both direct and transcode streams
-        // and avoids a full ffmpeg restart every loop.
-        if (hasOffset) {
+        if (isTranscode) {
             const baseSrc = src.split(/[?&]start=/)[0];
             seekBases.set(id, 0);
             video.src = baseSrc;
         } else {
-            try { video.currentTime = 0; } catch {}
+            video.currentTime = 0;
         }
         if (wasPlaying || video.autoplay) video.play();
     }
@@ -585,10 +450,10 @@
         // Reflect in the seekbar immediately so the user sees feedback
         // before the (possibly slow) transcode reload completes.
         const fill = document.querySelector(`.mv-cell[data-scene-id="${id}"] .mv-seekbar-fill`);
-        if (fill) fill.style.transform = 'scaleX(' + (target / duration) + ')';
+        if (fill) fill.style.width = (target / duration * 100) + '%';
     }
 
-    // ── Stream selection ──────────────────────────────────────────────────────
+    // �"?�"? Stream selection �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function parseStreams(streamList) {
         const s = {};
@@ -615,7 +480,7 @@
         return s;
     }
 
-    // ── Settings ──────────────────────────────────────────────────────────────
+    // �"?�"? Settings �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     const QUALITY_OPTIONS = [
         { value: 'direct',   label: 'Direct Stream' },
@@ -786,7 +651,7 @@
         document.getElementById('mv-settings-modal')?.remove();
     }
 
-    // ── Stream selection ───────────────────────────────────────────────────────
+    // �"?�"? Stream selection �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function pickStream(id) {
         const s = scenes[id]?.streams;
@@ -805,7 +670,7 @@
         return s[preferred] || s['webm' + res] || s['mp4' + res] || direct;
     }
 
-    // ── GraphQL ───────────────────────────────────────────────────────────────
+    // �"?�"? GraphQL �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     async function fetchSceneMeta(id) {
         try {
@@ -948,12 +813,12 @@
         }
     }
 
-    window.addEventListener('pagehide', () => { flushAllTrackers(); flushAllProgress(); });
+    window.addEventListener('pagehide', flushAllTrackers);
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') { flushAllTrackers(); flushAllProgress(); }
+        if (document.visibilityState === 'hidden') flushAllTrackers();
     });
 
-    // ── Layout ────────────────────────────────────────────────────────────────
+    // �"?�"? Layout �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function autoLayout(count, isPortrait = false) {
         if (count <= 1) return '1x1';
@@ -1067,7 +932,7 @@
         });
     }
 
-    // ── Play / Pause All ──────────────────────────────────────────────────────
+    // �"?�"? Play / Pause All �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function playPauseAll() {
         const videos = [...document.querySelectorAll('.mv-cell video')];
@@ -1085,7 +950,7 @@
         btn.title = playing ? 'Pause All' : 'Play All';
     }
 
-    // ── Audio mute/unmute ─────────────────────────────────────────────────────
+    // �"?�"? Audio mute/unmute �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function applyAudioCell(cell) {
         const id = cell.dataset.sceneId;
@@ -1132,7 +997,7 @@
         updateMuteAllBtn();
     }
 
-    // ── Seek ──────────────────────────────────────────────────────────────────
+    // �"?�"? Seek �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let activeSeek = null; // { seekbar, fill, video, id, ratio }
 
@@ -1141,17 +1006,12 @@
         const rect = activeSeek.seekbar.getBoundingClientRect();
         const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         activeSeek.ratio = ratio;
-        activeSeek.fill.style.transform = 'scaleX(' + ratio + ')';
+        activeSeek.fill.style.width = (ratio * 100) + '%';
     }
 
     function commitSeek() {
         if (!activeSeek || activeSeek.ratio == null) return;
         const { video, id, ratio } = activeSeek;
-        // A single click fires both mousedown and mouseup, each of which
-        // calls commitSeek — without this guard the transcoder gets two
-        // back-to-back src reassignments at the same offset for one click.
-        if (activeSeek.lastCommittedRatio === ratio) return;
-        activeSeek.lastCommittedRatio = ratio;
         const duration = scenes[id]?.duration || (isFinite(video.duration) ? video.duration : null);
         if (!duration) return;
 
@@ -1182,7 +1042,7 @@
         }
     }
 
-    // ── Volume popup ──────────────────────────────────────────────────────────
+    // �"?�"? Volume popup �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function closeAllPopups() {
         openPopupId = null;
@@ -1204,7 +1064,7 @@
         if (p) p.classList.add('is-open');
     }
 
-    // ── Render ────────────────────────────────────────────────────────────────
+    // �"?�"? Render �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function render() {
         const grid = document.getElementById('mv-grid');
@@ -1227,21 +1087,10 @@
         // Correct layout immediately if videos already have dimensions (re-render case)
         detectAndApplyOrientation();
 
-        // Snapshot of existing cells so add/cleanup avoid N querySelector + N
-        // queue.includes() calls. Newly created cells in this render get
-        // inserted at lower indices than the current iterator position, so
-        // the refCell forward-search never needs to see them.
-        const existing = new Map();
-        for (const cell of grid.children) {
-            const id = cell.dataset.sceneId;
-            if (id) existing.set(id, cell);
-        }
-        const queueSet = new Set(queue);
-
         // Add new cells at their correct queue position (before removal to avoid layout flash)
         queue.forEach((id, idx) => {
             if (typeof id !== 'string') return;
-            if (existing.has(id)) return;
+            if (grid.querySelector(`.mv-cell[data-scene-id="${id}"]`)) return;
 
             const cell = document.createElement('div');
             const isFilterBacked = filterBackedCells.has(id);
@@ -1250,88 +1099,16 @@
 
 
             const video = document.createElement('video');
-            const baseSrc = pickStream(id);
-            const resumeTime = isFilterBacked ? 0 : getResumeTime(id);
-            const isTranscodeSrc = baseSrc.includes('.webm') || baseSrc.includes('.mp4');
-            if (resumeTime > 0 && isTranscodeSrc) {
-                const sep = baseSrc.includes('?') ? '&' : '?';
-                seekBases.set(id, resumeTime);
-                video.src = baseSrc + sep + 'start=' + resumeTime;
-            } else {
-                video.src = baseSrc;
-                if (resumeTime > 0) {
-                    video.addEventListener('loadedmetadata', () => {
-                        try { video.currentTime = resumeTime; } catch {}
-                    }, { once: true });
-                }
-            }
+            video.src = pickStream(id);
             video.autoplay = true;
-            // Native loop is unreliable on transcoded `?start=X` URLs (the
-            // browser resets currentTime to 0 but our seekBase math makes the
-            // playhead appear to jump back to the offset mid-scene). Use an
-            // explicit ended handler instead so direct and transcode behave
-            // identically.
-            video.loop = false;
+            video.loop = !isFilterBacked;
             video.muted = !unmutedIds.has(id);
             video.playsInline = true;
             video.disablePictureInPicture = true;
 
             if (isFilterBacked) {
                 video.addEventListener('ended', () => advanceFilterCell(id));
-            } else {
-                video.addEventListener('ended', () => seekToStart(id, video));
             }
-
-            // Stall + error recovery. Browsers fire `seeking`/`seeked` cycles
-            // internally during a buffer underrun, which without recovery just
-            // flashes the loading spinner forever. After `waiting`, watch for
-            // `playing` within STALL_TIMEOUT_MS; if it never comes, re-source
-            // from the effective current time. `error` triggers immediate
-            // recovery. We cap retries to avoid loops on dead streams.
-            let stallWatchdog = null;
-            let consecutiveRecoveries = 0;
-            let cellTornDown = false;
-            const clearStallWatchdog = () => {
-                if (stallWatchdog) { clearTimeout(stallWatchdog); stallWatchdog = null; }
-            };
-            const recoverVideo = () => {
-                if (cellTornDown) return;
-                clearStallWatchdog();
-                if (++consecutiveRecoveries > MAX_RECOVERIES) {
-                    if (isFilterBacked) advanceFilterCell(id);
-                    return;
-                }
-                const currentSrc = video.getAttribute('src') || '';
-                let t = video.currentTime;
-                if (currentSrc.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
-                const isTranscode = currentSrc.includes('.webm') || currentSrc.includes('.mp4');
-                if (isTranscode) {
-                    const reSrc = currentSrc.split(/[?&]start=/)[0];
-                    const sep = reSrc.includes('?') ? '&' : '?';
-                    seekBases.set(id, t);
-                    video.src = reSrc + sep + 'start=' + t;
-                } else {
-                    video.load();
-                    video.addEventListener('loadedmetadata', () => {
-                        try { video.currentTime = t; } catch {}
-                    }, { once: true });
-                }
-                video.play().catch(() => {});
-            };
-            video._mvCleanup = () => {
-                cellTornDown = true;
-                clearStallWatchdog();
-                try { video.pause(); video.removeAttribute('src'); video.load(); } catch {}
-            };
-            video.addEventListener('waiting', () => {
-                clearStallWatchdog();
-                stallWatchdog = setTimeout(recoverVideo, STALL_TIMEOUT_MS);
-            });
-            video.addEventListener('playing', () => {
-                clearStallWatchdog();
-                consecutiveRecoveries = 0;
-            });
-            video.addEventListener('error', () => recoverVideo());
 
             video.addEventListener('loadedmetadata', () => {
                 connectAudio(id, video);
@@ -1343,29 +1120,19 @@
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'mv-loading';
             loadingDiv.innerHTML = '<div class="mv-spinner"></div>';
-            // Removal handled by the every-fire `canplay` listener below
-            // (cell.querySelector('.mv-loading')?.remove()), which also
-            // covers dynamically-added spinners from seeking/recovery.
+            video.addEventListener('canplay', () => {
+                loadingDiv.remove();
+                detectAndApplyOrientation();
+            }, { once: true });
 
-            // Single timeupdate handler covers both jobs: an orientation
-            // re-check that runs until videoWidth is known (then disables
-            // itself) and a throttled progress save for non-filter cells.
-            let dimsReady = false;
-            let lastProgressSave = 0;
-            video.addEventListener('timeupdate', () => {
-                if (!dimsReady && video.videoWidth > 0) {
-                    dimsReady = true;
+            // Final fallback: videoWidth/videoHeight are guaranteed non-zero during playback
+            const checkDims = () => {
+                if (video.videoWidth > 0) {
+                    video.removeEventListener('timeupdate', checkDims);
                     detectAndApplyOrientation();
                 }
-                if (isFilterBacked) return;
-                const now = performance.now();
-                if (now - lastProgressSave < PROGRESS_SAVE_INTERVAL_MS) return;
-                lastProgressSave = now;
-                const src = video.getAttribute('src') || '';
-                let t = video.currentTime;
-                if (src.match(/[?&]start=/)) t += (seekBases.get(id) || 0);
-                saveResumeTime(id, t);
-            });
+            };
+            video.addEventListener('timeupdate', checkDims);
 
             const overlay = document.createElement('div');
             overlay.className = 'mv-cell-overlay';
@@ -1416,7 +1183,7 @@
             playPauseBtn.title = 'Pause';
             playPauseBtn.addEventListener('click', e => {
                 e.stopPropagation();
-                if (video.paused) { video.play().catch(() => {}); }
+                if (video.paused) { video.play(); }
                 else              { video.pause(); }
             });
             video.addEventListener('pause', () => {
@@ -1479,7 +1246,7 @@
             slider.max = 2;
             slider.step = 0.05;
             slider.value = 1;
-            slider.title = 'Volume (0–200%)';
+            slider.title = 'Volume (0�?"200%)';
             slider.addEventListener('input', e => {
                 e.stopPropagation();
                 const val = parseFloat(slider.value);
@@ -1516,8 +1283,13 @@
                 if (currentSrc && currentSrc.match(/[?&]start=/)) {
                     current += (seekBases.get(id) || 0);
                 }
-                if (duration) seekFill.style.transform = 'scaleX(' + (current / duration) + ')';
+                if (duration) seekFill.style.width = (current / duration * 100) + '%';
             };
+
+            video.addEventListener('timeupdate', () => {
+                if (video.seeking) return;
+                updateProgress();
+            });
 
             video.addEventListener('seeking', () => {
                 if (!cell.querySelector('.mv-loading')) {
@@ -1567,22 +1339,20 @@
             for (let i = idx + 1; i < queue.length; i++) {
                 const nextId = queue[i];
                 if (typeof nextId !== 'string') continue;
-                const next = existing.get(nextId);
+                const next = grid.querySelector(`.mv-cell[data-scene-id="${nextId}"]`);
                 if (next) { refCell = next; break; }
             }
             grid.insertBefore(cell, refCell);
         });
 
         // Remove cells no longer in queue
-        for (const [id, cell] of existing) {
-            if (queueSet.has(id)) continue;
-            const v = cell.querySelector('video');
-            if (v) {
-                teardownPlayTracking(v);
-                v._mvCleanup?.();
+        grid.querySelectorAll('.mv-cell').forEach(cell => {
+            if (!queue.includes(cell.dataset.sceneId)) {
+                const v = cell.querySelector('video');
+                if (v) teardownPlayTracking(v);
+                cell.remove();
             }
-            cell.remove();
-        }
+        });
     }
 
     function applyQualityToAllCells() {
@@ -1627,7 +1397,7 @@
         });
     }
 
-    // ── Cross-tab sync ────────────────────────────────────────────────────────
+    // �"?�"? Cross-tab sync �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     window.addEventListener('storage', e => {
         if (e.key !== STORAGE_KEY) return;
@@ -1637,7 +1407,7 @@
         });
     });
 
-    // ── Roulette ──────────────────────────────────────────────────────────────
+    // �"?�"? Roulette �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     async function loadRoulette(count) {
         try {
@@ -1664,7 +1434,7 @@
         } catch {}
     }
 
-    // ── Menu panel ────────────────────────────────────────────────────────────
+    // �"?�"? Menu panel �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function openMenuPanel() {
         if (document.getElementById('mv-menu-panel')) { closeMenuPanel(); return; }
@@ -1728,7 +1498,7 @@
         }
     }
 
-    // ── Init ──────────────────────────────────────────────────────────────────
+    // �"?�"? Init �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     async function init() {
         const savedSettings = (() => {
@@ -1767,7 +1537,6 @@
 
         await loadSceneMeta(queue);
         render();
-        startProgressLoop();
     }
 
     document.addEventListener('DOMContentLoaded', init);
