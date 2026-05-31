@@ -464,6 +464,21 @@ html, body {
     pointer-events: auto;
 }
 
+/* ── Idle auto-hide ────────────────────────────────────────────────────────── */
+/* When the pointer sits still (mv-idle is toggled from JS), hide the hover
+   chrome and the cursor so an idle grid is clean, like a video player; any
+   movement removes mv-idle and restores it instantly. Scoped under
+   body.mv-idle .mv-cell:hover so it outranks the plain :hover rules. A cell
+   with its volume popup open is exempted so controls you're using stay put. */
+body.mv-idle { cursor: none; }
+body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-cell-overlay {
+    opacity: 0;
+    pointer-events: none;
+}
+body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-seekbar {
+    height: 4px;
+}
+
 /* ── Empty state ───────────────────────────────────────────────────────────── */
 
 #mv-empty {

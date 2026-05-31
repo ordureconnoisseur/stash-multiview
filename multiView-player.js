@@ -27,6 +27,9 @@
     // all N transcode requests at the same instant — a simultaneous burst
     // saturates a slow link / the shared transcoder and makes every cell stall.
     const STREAM_STAGGER_MS = 200;
+    // Hide the hover overlay/controls and the cursor after the pointer sits
+    // still this long, like a video player. Any movement restores them.
+    const IDLE_HIDE_MS = 2500;
 
     const PROGRESS_KEY = 'stash-multiview-progress';
     const PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1775,6 +1778,15 @@
         }
     }
 
+    // �"?�"? Idle auto-hide �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+
+    let idleHideTimer = null;
+    function markPointerActive() {
+        document.body.classList.remove('mv-idle');
+        clearTimeout(idleHideTimer);
+        idleHideTimer = setTimeout(() => document.body.classList.add('mv-idle'), IDLE_HIDE_MS);
+    }
+
     // �"?�"? Init �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     async function init() {
@@ -1804,6 +1816,12 @@
 
         document.addEventListener('mousemove', updateSeekFill);
         document.addEventListener('mouseup', () => { commitSeek(); activeSeek = null; });
+
+        // Idle auto-hide: any pointer/keyboard activity keeps the chrome up and
+        // re-arms the hide timer; stillness hides it after IDLE_HIDE_MS.
+        ['mousemove', 'mousedown', 'wheel', 'keydown'].forEach(ev =>
+            document.addEventListener(ev, markPointerActive, { passive: true }));
+        markPointerActive();
 
         // Close popup when clicking anywhere outside a popup or its trigger button
         document.addEventListener('mousedown', e => {
