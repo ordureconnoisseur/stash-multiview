@@ -762,6 +762,36 @@ body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-seekbar {
 
 .mv-menu-roll-btn:hover { background: var(--mv-accent-hover); }
 
+/* Roll mode segmented toggle (Replace / Add) */
+.mv-menu-mode {
+    display: flex;
+    background: var(--mv-border);
+    border-radius: 6px;
+    padding: 2px;
+}
+.mv-menu-mode-btn {
+    flex: 1;
+    padding: 6px 0;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: #999;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.mv-menu-mode-btn.active {
+    background: var(--mv-accent);
+    color: #fff;
+}
+.mv-menu-hint {
+    font-size: 11px;
+    color: #777;
+    line-height: 1.3;
+    margin-top: -4px;
+}
+
 /* ── Focus mode ──────────────────────────────────────────────────────────── */
 
 body.mv-focus #mv-topbar {

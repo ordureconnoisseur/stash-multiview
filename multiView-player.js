@@ -3,6 +3,7 @@
 
     const STORAGE_KEY = 'stash-multiview-queue';
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
+    const ROULETTE_MODE_KEY = 'stash-multiview-roulette-mode'; // 'replace' | 'add'
     const SETTINGS_KEY = 'stash-multiview-settings';
 
     // Stall recovery tuning. A stalled transcode is re-sourced from the
@@ -1689,26 +1690,47 @@
 
     // �"?�"? Roulette �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
-    async function loadRoulette(count) {
+    // mode 'replace' (default): the roll overwrites the whole grid with `count`
+    // random scenes. mode 'add': append up to `count` random scenes to the
+    // current grid (filter cards and all), capped at 16 and skipping scenes
+    // already on screen — lets you mix a random roll alongside curated slots.
+    async function loadRoulette(count, mode = 'replace') {
         try {
+            const adding = mode === 'add';
+            const want = adding ? Math.min(count, 16 - queue.length) : count;
+            if (want <= 0) return;
+            // In add mode fetch a buffer so we can drop scenes already on the grid.
+            const perPage = adding ? want + queue.length : want;
             const res = await fetch('/graphql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    query: `query { findScenes(filter: { per_page: ${count}, sort: "random" }) { scenes { id } } }`
+                    query: `query { findScenes(filter: { per_page: ${perPage}, sort: "random" }) { scenes { id } } }`
                 })
             });
             const data = await res.json();
-            const ids = (data?.data?.findScenes?.scenes || []).map(s => String(s.id));
-            if (!ids.length) return;
-            // Save as filter slots so reopening the player loads fresh random scenes
-            const rouletteSlots = Array.from({ length: ids.length }, () => ({ type: 'filter', filter: {} }));
-            saveQueue(rouletteSlots);
-            // In-memory: use already-fetched IDs, registered as filter-backed for auto-advance
-            filterBackedCells.clear();
+            let ids = (data?.data?.findScenes?.scenes || []).map(s => String(s.id));
             const rouletteFilter = { type: 'filter', filter: {} };
-            ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
-            queue = ids;
+
+            if (adding) {
+                const have = new Set(queue);
+                ids = ids.filter(id => !have.has(id)).slice(0, want);
+                if (!ids.length) return;
+                ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
+                queue = [...queue, ...ids];
+                // Append matching empty-filter slots so a reload reproduces them.
+                const saved = getQueue();
+                ids.forEach(() => saved.push({ type: 'filter', filter: {} }));
+                saveQueue(saved);
+            } else {
+                ids = ids.slice(0, want);
+                if (!ids.length) return;
+                // Save as filter slots so reopening the player loads fresh randoms.
+                saveQueue(ids.map(() => ({ type: 'filter', filter: {} })));
+                filterBackedCells.clear();
+                ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
+                queue = ids;
+            }
             await loadSceneMeta(ids);
             render();
         } catch {}
@@ -1748,6 +1770,32 @@
 
         sliderRow.append(countDisplay, slider);
 
+        // Replace / Add mode toggle.
+        let rollMode = localStorage.getItem(ROULETTE_MODE_KEY) === 'add' ? 'add' : 'replace';
+        const modeRow = document.createElement('div');
+        modeRow.className = 'mv-menu-mode';
+        const hint = document.createElement('div');
+        hint.className = 'mv-menu-hint';
+        const modeBtns = {};
+        const applyMode = m => {
+            rollMode = m;
+            localStorage.setItem(ROULETTE_MODE_KEY, m);
+            modeBtns.replace.classList.toggle('active', m === 'replace');
+            modeBtns.add.classList.toggle('active', m === 'add');
+            hint.textContent = m === 'add'
+                ? 'Adds random scenes to the grid (max 16).'
+                : 'Replaces every slot, including filter cards.';
+        };
+        [['replace', 'Replace'], ['add', 'Add']].forEach(([m, label]) => {
+            const b = document.createElement('button');
+            b.className = 'mv-menu-mode-btn';
+            b.textContent = label;
+            b.addEventListener('click', () => applyMode(m));
+            modeBtns[m] = b;
+            modeRow.appendChild(b);
+        });
+        applyMode(rollMode);
+
         const rollBtn = document.createElement('button');
         rollBtn.className = 'mv-menu-roll-btn';
         rollBtn.textContent = 'Roll';
@@ -1755,10 +1803,10 @@
             const count = parseInt(slider.value);
             localStorage.setItem(ROULETTE_COUNT_KEY, count);
             closeMenuPanel();
-            loadRoulette(count);
+            loadRoulette(count, rollMode);
         });
 
-        rouletteSection.append(heading, sliderRow, rollBtn);
+        rouletteSection.append(heading, sliderRow, modeRow, hint, rollBtn);
         panel.appendChild(rouletteSection);
         document.body.appendChild(panel);
 
