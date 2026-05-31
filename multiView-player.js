@@ -1777,24 +1777,6 @@
         const hint = document.createElement('div');
         hint.className = 'mv-menu-hint';
         const modeBtns = {};
-        const applyMode = m => {
-            rollMode = m;
-            localStorage.setItem(ROULETTE_MODE_KEY, m);
-            modeBtns.replace.classList.toggle('active', m === 'replace');
-            modeBtns.add.classList.toggle('active', m === 'add');
-            hint.textContent = m === 'add'
-                ? 'Adds random scenes to the grid (max 16).'
-                : 'Replaces every slot, including filter cards.';
-        };
-        [['replace', 'Replace'], ['add', 'Add']].forEach(([m, label]) => {
-            const b = document.createElement('button');
-            b.className = 'mv-menu-mode-btn';
-            b.textContent = label;
-            b.addEventListener('click', () => applyMode(m));
-            modeBtns[m] = b;
-            modeRow.appendChild(b);
-        });
-        applyMode(rollMode);
 
         const rollBtn = document.createElement('button');
         rollBtn.className = 'mv-menu-roll-btn';
@@ -1805,6 +1787,38 @@
             closeMenuPanel();
             loadRoulette(count, rollMode);
         });
+
+        const applyMode = m => {
+            rollMode = m;
+            localStorage.setItem(ROULETTE_MODE_KEY, m);
+            modeBtns.replace.classList.toggle('active', m === 'replace');
+            modeBtns.add.classList.toggle('active', m === 'add');
+            if (m === 'add') {
+                // Cap the slider at the number of free slots — you can only add
+                // as many as there's room for (16 total).
+                const spare = Math.max(0, 16 - queue.length);
+                slider.max = Math.max(1, spare);
+                slider.disabled = rollBtn.disabled = spare <= 0;
+                if (parseInt(slider.value) > spare) slider.value = String(Math.max(1, spare));
+                hint.textContent = spare <= 0
+                    ? 'Grid is full (16). Remove a scene to add more.'
+                    : `Adds random scenes — ${spare} slot${spare === 1 ? '' : 's'} free.`;
+            } else {
+                slider.max = 16;
+                slider.disabled = rollBtn.disabled = false;
+                hint.textContent = 'Replaces every slot, including filter cards.';
+            }
+            countDisplay.textContent = slider.value;
+        };
+        [['replace', 'Replace'], ['add', 'Add']].forEach(([m, label]) => {
+            const b = document.createElement('button');
+            b.className = 'mv-menu-mode-btn';
+            b.textContent = label;
+            b.addEventListener('click', () => applyMode(m));
+            modeBtns[m] = b;
+            modeRow.appendChild(b);
+        });
+        applyMode(rollMode);
 
         rouletteSection.append(heading, sliderRow, modeRow, hint, rollBtn);
         panel.appendChild(rouletteSection);

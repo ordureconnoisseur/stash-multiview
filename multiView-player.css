@@ -761,6 +761,9 @@ body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-seekbar {
 }
 
 .mv-menu-roll-btn:hover { background: var(--mv-accent-hover); }
+.mv-menu-roll-btn:disabled { opacity: 0.4; cursor: default; }
+.mv-menu-roll-btn:disabled:hover { background: var(--mv-accent); }
+.mv-menu-slider:disabled { opacity: 0.4; cursor: default; }
 
 /* Roll mode segmented toggle (Replace / Add) */
 .mv-menu-mode {
