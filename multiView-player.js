@@ -56,6 +56,8 @@
     const ICON_DICE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M13.763,0 L2.178,0 C0.998,0 0.043,0.966 0.043,2.155 L0.043,13.845 C0.043,15.034 0.998,15.999 2.178,15.999 L13.763,15.999 C14.944,15.999 15.899,15.034 15.899,13.845 L15.899,2.155 C15.898,0.966 14.943,0 13.763,0 Z M4.002,6.153 C2.856,6.153 1.927,5.202 1.927,4.03 C1.927,2.858 2.856,1.907 4.002,1.907 C5.148,1.907 6.078,2.858 6.078,4.03 C6.078,5.202 5.148,6.153 4.002,6.153 Z M12.002,14.153 C10.856,14.153 9.927,13.202 9.927,12.03 C9.927,10.858 10.856,9.907 12.002,9.907 C13.148,9.907 14.078,10.858 14.078,12.03 C14.078,13.202 13.148,14.153 12.002,14.153 Z M8.002,10.153 C6.856,10.153 5.927,9.202 5.927,8.03 C5.927,6.858 6.856,5.907 8.002,5.907 C9.148,5.907 10.078,6.858 10.078,8.03 C10.078,9.202 9.148,10.153 8.002,10.153 Z"/></svg>`;
     const ICON_PREV = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" aria-hidden="true"><path fill="currentColor" d="M267.5 440.6c9.5 7.9 22.8 9.7 34.1 4.4s18.4-16.6 18.4-29V96c0-12.4-7.2-23.7-18.4-29s-24.5-3.4-34.1 4.4l-192 160L64 241V96c0-17.7-14.3-32-32-32S0 78.3 0 96V416c0 17.7 14.3 32 32 32s32-14.3 32-32V271l11.5 9.6 192 160z"/></svg>`;
     const ICON_NEXT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" aria-hidden="true"><path fill="currentColor" d="M52.5 440.6c-9.5 7.9-22.8 9.7-34.1 4.4S0 428.4 0 416V96C0 83.6 7.2 72.3 18.4 67s24.5-3.4 34.1 4.4l192 160L256 241V96c0-17.7 14.3-32 32-32s32 14.3 32 32V416c0 17.7-14.3 32-32 32s-32-14.3-32-32V271l-11.5 9.6-192 160z"/></svg>`;
+    const ICON_EXPAND = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 10L21 3M21 3H16.5M21 3V7.5M10 14L3 21M3 21H7.5M3 21L3 16.5"/></svg>`;
+    const ICON_COMPRESS = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3L14 10M14 10H18.5M14 10V5.5M3 21L10 14M10 14H5.5M10 14V18.5"/></svg>`;
     // �"?�"? State �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let queue = [];
@@ -595,6 +597,23 @@
         playerSettings.focusMode = !playerSettings.focusMode;
         savePlayerSettings();
         applyFocusMode(playerSettings.focusMode);
+    }
+
+    function applyFullscreenIcon() {
+        const fs = !!document.fullscreenElement;
+        const btn = document.getElementById('mv-fullscreen-btn');
+        if (!btn) return;
+        btn.innerHTML = fs ? ICON_COMPRESS : ICON_EXPAND;
+        btn.title = fs ? 'Exit Full Screen' : 'Full Screen';
+        btn.classList.toggle('active', fs);
+    }
+
+    function toggleFullscreen() {
+        if (document.fullscreenElement) {
+            document.exitFullscreen?.();
+        } else {
+            document.documentElement.requestFullscreen?.().catch(() => {});
+        }
     }
 
     function openSettingsModal() {
@@ -1865,8 +1884,11 @@
         document.getElementById('mv-mute-all-btn').addEventListener('click', toggleMuteAll);
         document.getElementById('mv-o-all-btn').addEventListener('click', incrementAllO);
         document.getElementById('mv-focus-btn').addEventListener('click', toggleFocusMode);
+        document.getElementById('mv-fullscreen-btn').addEventListener('click', toggleFullscreen);
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
         document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);
+        document.addEventListener('fullscreenchange', applyFullscreenIcon);
+        applyFullscreenIcon();
         document.addEventListener('keydown', e => {
             if (e.key === 'f' || e.key === 'F') toggleFocusMode();
             else if (e.key === 'm' || e.key === 'M') toggleMuteAll();
