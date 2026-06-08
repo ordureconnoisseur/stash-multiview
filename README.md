@@ -102,16 +102,17 @@ Click the **focus button** in the top bar (or press **F**) to toggle Focus Mode.
 
 Press **F** (or click the focus button) again to return to the normal grid.
 
-### Keyboard Shortcuts
+### Shortcuts
 
-Default bindings:
+Every shortcut is **rebindable to a keyboard key _or_ a mouse button**. Open **Settings**, expand the collapsible **Shortcuts** section, click the binding next to an action, then press the key or mouse button you want (middle, right, back, and forward buttons are supported). Backspace clears a binding, Esc cancels.
 
-| Key | Action |
-|---|---|
-| `P` | Play / pause all |
-| `M` | Mute / unmute all |
-| `F` | Toggle Focus Mode |
+| Action | Default | Notes |
+|---|---|---|
+| Mute / Unmute (hovered) | Middle Click | Acts on the scene under the cursor |
+| Play / Pause (hovered) | _unbound_ | Acts on the scene under the cursor |
+| O counter (hovered) | _unbound_ | Acts on the scene under the cursor |
+| Toggle Focus Mode | `F` | |
+| Toggle Full Screen | _unbound_ | |
+| Open Roulette | _unbound_ | |
 
-All shortcuts are **rebindable to a keyboard key _or_ a mouse button**. Open **Settings → Keyboard Shortcuts**, click the binding next to an action, then press the key or mouse button you want (middle, right, back, and forward buttons are supported). Backspace clears a binding, Esc cancels.
-
-Besides the three above you can also bind **Mute / Unmute Hovered** (the scene under the cursor — defaults to **middle-click**), **Toggle Full Screen**, **O All**, and **Open Roulette**.
+The grid-wide **Mute All**, **Pause All**, and **O All** actions live as buttons in the top bar.

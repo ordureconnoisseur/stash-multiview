@@ -694,6 +694,41 @@ body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-seekbar {
     color: var(--mv-accent);
 }
 
+/* Collapsible Shortcuts section */
+.mv-settings-shortcuts {
+    padding: 12px 16px 16px;
+    border-top: 1px solid var(--mv-border);
+}
+.mv-shortcuts-summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 0;
+    user-select: none;
+    transition: color 0.15s;
+}
+.mv-shortcuts-summary:hover { color: #999; }
+.mv-shortcuts-summary::-webkit-details-marker { display: none; }
+/* Chevron that rotates when the section opens */
+.mv-shortcuts-summary::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s;
+}
+.mv-settings-shortcuts[open] .mv-shortcuts-summary::before { transform: rotate(45deg); }
+.mv-shortcuts-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+}
+
 /* ── Menu panel ────────────────────────────────────────────────────────────── */
 
 #mv-menu-panel {

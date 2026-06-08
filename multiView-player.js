@@ -2,7 +2,7 @@
     'use strict';
 
     // Build marker — confirms which player build is actually running (cache check).
-    console.log('[multiView] player build kb-mouse-257 loaded');
+    console.log('[multiView] player build kb-mouse-258 loaded');
 
     const STORAGE_KEY = 'stash-multiview-queue';
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
@@ -577,16 +577,17 @@
     // (single letters lower-cased, ' ' -> 'Space') or a mouse button ('Mouse<n>'
     // where n is event.button: 1 middle, 2 right, 3 back, 4 forward). `run` gets
     // the originating event so cell-scoped actions can find the target.
+    // The "All" actions live as top-bar buttons; shortcuts instead target the
+    // single cell under the cursor so a mouse button can act on one panel.
     const KEYBIND_ACTIONS = [
-        { id: 'playPauseAll', label: 'Play / Pause All',          run: () => playPauseAll() },
-        { id: 'muteAll',      label: 'Mute / Unmute All',         run: () => toggleMuteAll() },
-        { id: 'muteHover',    label: 'Mute / Unmute Hovered',     run: e => muteHoveredCell(e) },
-        { id: 'focus',        label: 'Toggle Focus Mode',         run: () => toggleFocusMode() },
-        { id: 'fullscreen',   label: 'Toggle Full Screen',        run: () => toggleFullscreen() },
-        { id: 'oAll',         label: 'O All',                     run: () => incrementAllO() },
-        { id: 'roulette',     label: 'Open Roulette',             run: () => openMenuPanel() },
+        { id: 'playPauseHover', label: 'Play / Pause (hovered)',  run: e => playPauseHoveredCell(e) },
+        { id: 'muteHover',      label: 'Mute / Unmute (hovered)', run: e => muteHoveredCell(e) },
+        { id: 'oHover',         label: 'O counter (hovered)',     run: e => oHoveredCell(e) },
+        { id: 'focus',          label: 'Toggle Focus Mode',       run: () => toggleFocusMode() },
+        { id: 'fullscreen',     label: 'Toggle Full Screen',      run: () => toggleFullscreen() },
+        { id: 'roulette',       label: 'Open Roulette',           run: () => openMenuPanel() },
     ];
-    const DEFAULT_KEYBINDS = { playPauseAll: 'p', muteAll: 'm', muteHover: 'Mouse1', focus: 'f', fullscreen: '', oAll: '', roulette: '' };
+    const DEFAULT_KEYBINDS = { playPauseHover: '', muteHover: 'Mouse1', oHover: '', focus: 'f', fullscreen: '', roulette: '' };
     // Targets where a non-left button keeps its native meaning, so a mouse
     // shortcut must NOT fire over them: links (middle-click opens a new tab) and
     // the settings/menu/volume panels (which contain their own controls). NOTE:
@@ -596,10 +597,25 @@
     const MOUSE_BIND_EXCLUDE = 'a, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel';
     const MOUSE_LABELS = { Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click', Mouse3: 'Mouse Back', Mouse4: 'Mouse Forward' };
 
-    function muteHoveredCell(e) {
-        const cell = (e && e.target && e.target.closest && e.target.closest('.mv-cell'))
+    // The cell a shortcut should act on: the click target's cell for mouse
+    // bindings, else whatever cell the pointer is hovering (keyboard bindings).
+    function hoveredCell(e) {
+        return (e && e.target && e.target.closest && e.target.closest('.mv-cell'))
             || document.querySelector('.mv-cell:hover');
+    }
+    function muteHoveredCell(e) {
+        const cell = hoveredCell(e);
         if (cell) toggleAudio(cell.dataset.sceneId);
+    }
+    function oHoveredCell(e) {
+        const cell = hoveredCell(e);
+        if (cell) incrementO(cell.dataset.sceneId);
+    }
+    function playPauseHoveredCell(e) {
+        const cell = hoveredCell(e);
+        const v = cell && cell.querySelector('video');
+        if (!v) return;
+        if (v.paused) v.play().catch(() => {}); else v.pause();
     }
 
     function normalizeKey(k) {
@@ -780,15 +796,17 @@
             applyQualityToAllCells();
         });
 
-        // Keyboard shortcuts section
-        const kbSection = document.createElement('div');
-        kbSection.className = 'mv-settings-qual-section';
-        const kbHeading = document.createElement('span');
-        kbHeading.className = 'mv-settings-section-heading';
-        kbHeading.textContent = 'Keyboard Shortcuts';
-        kbSection.appendChild(kbHeading);
+        // Shortcuts section — collapsed by default (native <details>) to keep
+        // the panel tidy; bind a keyboard key or mouse button per action.
+        const kbSection = document.createElement('details');
+        kbSection.className = 'mv-settings-shortcuts';
+        const kbSummary = document.createElement('summary');
+        kbSummary.className = 'mv-settings-section-heading mv-shortcuts-summary';
+        kbSummary.textContent = 'Shortcuts';
+        kbSection.appendChild(kbSummary);
 
         const kbRows = document.createElement('div');
+        kbRows.className = 'mv-shortcuts-rows';
         kbSection.appendChild(kbRows);
 
         function renderKeybindRows() {
