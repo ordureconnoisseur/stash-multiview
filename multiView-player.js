@@ -1,6 +1,9 @@
 (function () {
     'use strict';
 
+    // Build marker — confirms which player build is actually running (cache check).
+    console.log('[multiView] player build kb-mouse-257 loaded');
+
     const STORAGE_KEY = 'stash-multiview-queue';
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
     const ROULETTE_MODE_KEY = 'stash-multiview-roulette-mode'; // 'replace' | 'add'

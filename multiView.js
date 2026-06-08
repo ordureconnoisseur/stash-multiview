@@ -272,7 +272,10 @@
             `;
             document.body.appendChild(el);
             document.getElementById('mv-open-btn').addEventListener('click', () => {
-                window.open(PLAYER_URL, '_blank');
+                // Cache-bust the HTML itself so a stale cached index.html can't
+                // keep pointing at old ?v= asset versions (browsers cache the
+                // navigation document). Each launch fetches fresh markup.
+                window.open(PLAYER_URL + '?t=' + Date.now(), '_blank');
             });
             // First press clears the queue; with an already-empty queue the
             // X dismisses the launcher by disabling picking mode.
