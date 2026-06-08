@@ -112,4 +112,6 @@ Default bindings:
 | `M` | Mute / unmute all |
 | `F` | Toggle Focus Mode |
 
-All shortcuts are **rebindable**. Open **Settings → Keyboard Shortcuts**, click the key next to an action, then press the key you want. Backspace clears a binding, Esc cancels. You can also bind keys to **Toggle Full Screen**, **O All**, and **Open Roulette**, which are unbound by default.
+All shortcuts are **rebindable to a keyboard key _or_ a mouse button**. Open **Settings → Keyboard Shortcuts**, click the binding next to an action, then press the key or mouse button you want (middle, right, back, and forward buttons are supported). Backspace clears a binding, Esc cancels.
+
+Besides the three above you can also bind **Mute / Unmute Hovered** (the scene under the cursor — defaults to **middle-click**), **Toggle Full Screen**, **O All**, and **Open Roulette**.
