@@ -72,6 +72,8 @@ The queue is shared across tabs — changes on one tab are immediately reflected
 | Control | Action |
 |---|---|
 | Click a cell | Play / pause that scene |
+| Middle-click a cell | Mute / unmute that scene |
+| Scroll wheel over a cell | Skip ±5 seconds (enable **Scroll-Wheel Seek** in Settings first) |
 | Seekbar (bottom of cell) | Scrub to any position |
 | Volume button | Open per-cell volume slider |
 | Mute All (top bar) | Mute / unmute all scenes simultaneously |
@@ -102,9 +104,12 @@ Press **F** (or click the focus button) again to return to the normal grid.
 
 ### Keyboard Shortcuts
 
+Default bindings:
+
 | Key | Action |
 |---|---|
-| `Space` | Play / pause all |
 | `P` | Play / pause all |
 | `M` | Mute / unmute all |
 | `F` | Toggle Focus Mode |
+
+All shortcuts are **rebindable**. Open **Settings → Keyboard Shortcuts**, click the key next to an action, then press the key you want. Backspace clears a binding, Esc cancels. You can also bind keys to **Toggle Full Screen**, **O All**, and **Open Roulette**, which are unbound by default.

@@ -471,7 +471,13 @@ html, body {
    movement removes mv-idle and restores it instantly. Scoped under
    body.mv-idle .mv-cell:hover so it outranks the plain :hover rules. A cell
    with its volume popup open is exempted so controls you're using stay put. */
-body.mv-idle { cursor: none; }
+/* cursor:none on body alone loses to the descendant cursor:pointer on cells,
+   buttons and video, so the cursor never actually hid. Force it across the
+   whole subtree while idle; any mousemove clears mv-idle and restores the real
+   cursors instantly. An open volume popup is exempt so its controls stay usable. */
+body.mv-idle, body.mv-idle * { cursor: none !important; }
+body.mv-idle .mv-cell.mv-popup-open .mv-vol-popup,
+body.mv-idle .mv-cell.mv-popup-open .mv-vol-popup * { cursor: auto !important; }
 body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-cell-overlay {
     opacity: 0;
     pointer-events: none;
@@ -668,6 +674,25 @@ body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-seekbar {
 
 .mv-quality-select:hover { border-color: #555; }
 .mv-quality-select:disabled { opacity: 0.4; cursor: default; }
+
+.mv-keybind-btn {
+    min-width: 70px;
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    border-radius: 5px;
+    color: #ccc;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    padding: 4px 10px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s, color 0.15s;
+}
+.mv-keybind-btn:hover { border-color: #555; }
+.mv-keybind-btn.capturing {
+    border-color: var(--mv-accent);
+    color: var(--mv-accent);
+}
 
 /* ── Menu panel ────────────────────────────────────────────────────────────── */
 

@@ -567,12 +567,37 @@
 
     const DEFAULT_QUALITY = { 1: 'webm1080', 2: 'webm720', 4: 'webm720', 6: 'webm480', 9: 'webm480', 12: 'webm360', 16: 'webm360' };
 
+    // Rebindable keyboard shortcuts. `run` is invoked when the bound key fires;
+    // it references module functions that are hoisted/defined by run() time.
+    // Stored keys are normalized (single letters lower-cased, ' ' -> 'Space').
+    const KEYBIND_ACTIONS = [
+        { id: 'playPauseAll', label: 'Play / Pause All',    run: () => playPauseAll() },
+        { id: 'muteAll',      label: 'Mute / Unmute All',   run: () => toggleMuteAll() },
+        { id: 'focus',        label: 'Toggle Focus Mode',   run: () => toggleFocusMode() },
+        { id: 'fullscreen',   label: 'Toggle Full Screen',  run: () => toggleFullscreen() },
+        { id: 'oAll',         label: 'O All',               run: () => incrementAllO() },
+        { id: 'roulette',     label: 'Open Roulette',       run: () => openMenuPanel() },
+    ];
+    const DEFAULT_KEYBINDS = { playPauseAll: 'p', muteAll: 'm', focus: 'f', fullscreen: '', oAll: '', roulette: '' };
+
+    function normalizeKey(k) {
+        if (!k) return '';
+        if (k === ' ' || k === 'Spacebar') return 'Space';
+        return k.length === 1 ? k.toLowerCase() : k;
+    }
+    function keyLabel(k) {
+        if (!k) return 'Unbound';
+        return k.length === 1 ? k.toUpperCase() : k;
+    }
+    let keybindCaptureActive = false;
+
     function loadPlayerSettings(saved = {}) {
         return {
             directPlay: saved.directPlay ?? false,
             quality: { ...DEFAULT_QUALITY, ...(saved.quality || {}) },
             focusMode: saved.focusMode ?? false,
-            wheelSeek: saved.wheelSeek ?? false
+            wheelSeek: saved.wheelSeek ?? false,
+            keybinds: { ...DEFAULT_KEYBINDS, ...(saved.keybinds || {}) }
         };
     }
 
@@ -719,7 +744,70 @@
             applyQualityToAllCells();
         });
 
-        card.append(header, dpRow, swRow, qualSection);
+        // Keyboard shortcuts section
+        const kbSection = document.createElement('div');
+        kbSection.className = 'mv-settings-qual-section';
+        const kbHeading = document.createElement('span');
+        kbHeading.className = 'mv-settings-section-heading';
+        kbHeading.textContent = 'Keyboard Shortcuts';
+        kbSection.appendChild(kbHeading);
+
+        const kbRows = document.createElement('div');
+        kbSection.appendChild(kbRows);
+
+        function renderKeybindRows() {
+            kbRows.innerHTML = '';
+            KEYBIND_ACTIONS.forEach(action => {
+                const row = document.createElement('div');
+                row.className = 'mv-settings-qual-row';
+                const lbl = document.createElement('label');
+                lbl.textContent = action.label;
+                const btn = document.createElement('button');
+                btn.className = 'mv-keybind-btn';
+                btn.textContent = keyLabel(playerSettings.keybinds[action.id]);
+                btn.title = 'Click to rebind. Backspace clears, Esc cancels.';
+                btn.addEventListener('click', () => beginRebind(action, btn));
+                row.append(lbl, btn);
+                kbRows.appendChild(row);
+            });
+        }
+
+        function beginRebind(action, btn) {
+            if (keybindCaptureActive) return;
+            keybindCaptureActive = true;
+            btn.classList.add('capturing');
+            btn.textContent = 'Press a key…';
+            const onCapture = ev => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                document.removeEventListener('keydown', onCapture, true);
+                keybindCaptureActive = false;
+                btn.classList.remove('capturing');
+                if (ev.key === 'Escape') { renderKeybindRows(); return; }
+                if (ev.key === 'Backspace' || ev.key === 'Delete') {
+                    playerSettings.keybinds[action.id] = '';
+                } else {
+                    const k = normalizeKey(ev.key);
+                    if (k) {
+                        // A key maps to one action; steal it from any other holder.
+                        KEYBIND_ACTIONS.forEach(a => {
+                            if (a.id !== action.id && playerSettings.keybinds[a.id] === k) {
+                                playerSettings.keybinds[a.id] = '';
+                            }
+                        });
+                        playerSettings.keybinds[action.id] = k;
+                    }
+                }
+                savePlayerSettings();
+                renderKeybindRows();
+            };
+            // Capture phase so we beat the global shortcut handler to the key.
+            document.addEventListener('keydown', onCapture, true);
+        }
+
+        renderKeybindRows();
+
+        card.append(header, dpRow, swRow, qualSection, kbSection);
         overlay.appendChild(card);
         overlay.addEventListener('click', e => { if (e.target === overlay) closeSettingsModal(); });
         document.body.appendChild(overlay);
@@ -1640,7 +1728,7 @@
             slider.max = 2;
             slider.step = 0.05;
             slider.value = 1;
-            slider.title = 'Volume (0�?"200%)';
+            slider.title = 'Volume (0-200%)';
             slider.addEventListener('input', e => {
                 e.stopPropagation();
                 const val = parseFloat(slider.value);
@@ -1716,6 +1804,21 @@
                 const delta = e.deltaY < 0 ? WHEEL_STEP_SECONDS : -WHEEL_STEP_SECONDS;
                 scheduleWheelSeek(id, video, delta);
             }, { passive: false });
+
+            // Middle-click anywhere on the cell toggles its audio. Skip links
+            // and controls so middle-clicking the title still opens the scene in
+            // a new tab. preventDefault on mousedown suppresses the OS autoscroll
+            // puck (it triggers on press, so auxclick alone is too late).
+            const isMiddleClickTarget = e =>
+                e.button === 1 && !e.target.closest('a, button, .mv-vol-popup');
+            cell.addEventListener('mousedown', e => {
+                if (isMiddleClickTarget(e)) e.preventDefault();
+            });
+            cell.addEventListener('auxclick', e => {
+                if (!isMiddleClickTarget(e)) return;
+                e.preventDefault();
+                toggleAudio(id);
+            });
 
             cell.append(video, loadingDiv, overlay, popup, seekbar);
 
@@ -1992,9 +2095,21 @@
         document.addEventListener('fullscreenchange', applyFullscreenIcon);
         applyFullscreenIcon();
         document.addEventListener('keydown', e => {
-            if (e.key === 'f' || e.key === 'F') toggleFocusMode();
-            else if (e.key === 'm' || e.key === 'M') toggleMuteAll();
-            else if (e.key === 'p' || e.key === 'P') playPauseAll();
+            // Let modified chords (Ctrl/Cmd/Alt) and typing in fields pass through,
+            // and stand down while a rebind capture is grabbing the next key.
+            if (keybindCaptureActive) return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const tag = e.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+            const key = normalizeKey(e.key);
+            if (!key) return;
+            for (const action of KEYBIND_ACTIONS) {
+                if (playerSettings.keybinds[action.id] === key) {
+                    e.preventDefault();
+                    action.run();
+                    return;
+                }
+            }
         });
         window.addEventListener('resize', () => {
             if (playerSettings.focusMode) applyJustifiedLayout();
