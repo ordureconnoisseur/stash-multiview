@@ -584,9 +584,13 @@
         { id: 'roulette',     label: 'Open Roulette',             run: () => openMenuPanel() },
     ];
     const DEFAULT_KEYBINDS = { playPauseAll: 'p', muteAll: 'm', muteHover: 'Mouse1', focus: 'f', fullscreen: '', oAll: '', roulette: '' };
-    // Targets that should keep their native click (links open, buttons act, etc.)
-    // and never trigger a mouse-button shortcut.
-    const MOUSE_BIND_EXCLUDE = 'a, button, input, select, textarea, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel';
+    // Targets where a non-left button keeps its native meaning, so a mouse
+    // shortcut must NOT fire over them: links (middle-click opens a new tab) and
+    // the settings/menu/volume panels (which contain their own controls). NOTE:
+    // plain buttons are deliberately NOT excluded — the big play button covers a
+    // cell's center, and middle/right-clicking it should still fire the shortcut
+    // (left-clicks are ignored by the dispatcher via e.button === 0).
+    const MOUSE_BIND_EXCLUDE = 'a, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel';
     const MOUSE_LABELS = { Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click', Mouse3: 'Mouse Back', Mouse4: 'Mouse Forward' };
 
     function muteHoveredCell(e) {
@@ -2134,12 +2138,13 @@
         // Mouse-button shortcuts. Never hijack the left button; skip links and
         // controls so they keep their native click. preventDefault on mousedown
         // suppresses the middle-button autoscroll puck (it arms on press).
+        // Capture phase so a cell/seekbar stopPropagation can't swallow it.
         document.addEventListener('mousedown', e => {
             if (keybindCaptureActive || e.button === 0) return;
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (e.target.closest(MOUSE_BIND_EXCLUDE)) return;
             runBinding('Mouse' + e.button, e);
-        });
+        }, true);
         // If the right button is bound, swallow the context menu it would open.
         document.addEventListener('contextmenu', e => {
             if (keybindCaptureActive || e.target.closest(MOUSE_BIND_EXCLUDE)) return;
