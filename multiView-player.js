@@ -123,7 +123,7 @@
             const ctx = getAudioCtx();
             const source = ctx.createMediaElementSource(video);
             const gain = ctx.createGain();
-            gain.gain.value = 1.0;
+            gain.gain.value = playerSettings.defaultVolume;
             source.connect(gain);
             gain.connect(ctx.destination);
             cellGains.set(id, gain);
@@ -646,6 +646,11 @@
             quality: { ...DEFAULT_QUALITY, ...(saved.quality || {}) },
             focusMode: saved.focusMode ?? false,
             wheelSeek: saved.wheelSeek ?? false,
+            invertWheelSeek: saved.invertWheelSeek ?? false,
+            // Initial gain applied to every cell (0–2 → 0–200%). sashi: 100% is
+            // too loud by default, so this is user-tunable. Cells still start
+            // muted; this is the level the gain jumps to when first unmuted.
+            defaultVolume: Math.max(0, Math.min(2, saved.defaultVolume ?? 1.0)),
             keybinds: { ...DEFAULT_KEYBINDS, ...(saved.keybinds || {}) }
         };
     }
@@ -749,8 +754,68 @@
         swToggle.addEventListener('change', () => {
             playerSettings.wheelSeek = swToggle.checked;
             savePlayerSettings();
+            invToggle.disabled = !swToggle.checked;
+            invRow.classList.toggle('mv-settings-disabled', !swToggle.checked);
         });
         swRow.append(swText, swToggle);
+
+        // Invert scroll-seek direction row (only meaningful when seek is on)
+        const invRow = document.createElement('div');
+        invRow.className = 'mv-settings-dp-row';
+        const invText = document.createElement('div');
+        invText.className = 'mv-settings-dp-text';
+        const invLabel = document.createElement('span');
+        invLabel.className = 'mv-settings-dp-label';
+        invLabel.textContent = 'Invert Scroll-Seek Direction';
+        const invDesc = document.createElement('span');
+        invDesc.className = 'mv-settings-dp-desc';
+        invDesc.textContent = 'Off: scroll up = forward. On: scroll down = forward.';
+        invText.append(invLabel, invDesc);
+        const invToggle = document.createElement('input');
+        invToggle.type = 'checkbox';
+        invToggle.className = 'mv-toggle';
+        invToggle.checked = playerSettings.invertWheelSeek;
+        invToggle.disabled = !playerSettings.wheelSeek;
+        invToggle.addEventListener('change', () => {
+            playerSettings.invertWheelSeek = invToggle.checked;
+            savePlayerSettings();
+        });
+        invRow.append(invText, invToggle);
+        if (!playerSettings.wheelSeek) invRow.classList.add('mv-settings-disabled');
+
+        // Default volume row
+        const volRow = document.createElement('div');
+        volRow.className = 'mv-settings-dp-row';
+        const volText = document.createElement('div');
+        volText.className = 'mv-settings-dp-text';
+        const volLbl = document.createElement('span');
+        volLbl.className = 'mv-settings-dp-label';
+        volLbl.textContent = 'Default Volume';
+        const volDesc = document.createElement('span');
+        volDesc.className = 'mv-settings-dp-desc';
+        volDesc.textContent = 'Starting volume for each video when unmuted.';
+        volText.append(volLbl, volDesc);
+        const volWrap = document.createElement('div');
+        volWrap.className = 'mv-settings-vol-wrap';
+        const volVal = document.createElement('span');
+        volVal.className = 'mv-settings-vol-val';
+        volVal.textContent = Math.round(playerSettings.defaultVolume * 100) + '%';
+        const volSlider = document.createElement('input');
+        volSlider.type = 'range';
+        volSlider.className = 'mv-settings-vol-slider';
+        volSlider.min = 0;
+        volSlider.max = 2;
+        volSlider.step = 0.05;
+        volSlider.value = playerSettings.defaultVolume;
+        volSlider.title = 'Default volume (0–200%)';
+        volSlider.addEventListener('input', () => {
+            const v = parseFloat(volSlider.value);
+            playerSettings.defaultVolume = v;
+            volVal.textContent = Math.round(v * 100) + '%';
+            savePlayerSettings();
+        });
+        volWrap.append(volVal, volSlider);
+        volRow.append(volText, volWrap);
 
         // Quality section
         const qualSection = document.createElement('div');
@@ -871,7 +936,7 @@
 
         renderKeybindRows();
 
-        card.append(header, dpRow, swRow, qualSection, kbSection);
+        card.append(header, dpRow, swRow, invRow, volRow, qualSection, kbSection);
         overlay.appendChild(card);
         overlay.addEventListener('click', e => { if (e.target === overlay) closeSettingsModal(); });
         document.body.appendChild(overlay);
@@ -1783,7 +1848,7 @@
 
             const volLabel = document.createElement('span');
             volLabel.className = 'mv-vol-label';
-            volLabel.textContent = '100%';
+            volLabel.textContent = Math.round(playerSettings.defaultVolume * 100) + '%';
 
             const slider = document.createElement('input');
             slider.type = 'range';
@@ -1791,7 +1856,7 @@
             slider.min = 0;
             slider.max = 2;
             slider.step = 0.05;
-            slider.value = 1;
+            slider.value = playerSettings.defaultVolume;
             slider.title = 'Volume (0-200%)';
             slider.addEventListener('input', e => {
                 e.stopPropagation();
@@ -1865,7 +1930,11 @@
                 // is wheel-adjustable in the browser by default).
                 if (e.target.closest('.mv-vol-popup')) return;
                 e.preventDefault();
-                const delta = e.deltaY < 0 ? WHEEL_STEP_SECONDS : -WHEEL_STEP_SECONDS;
+                // Default: scroll up = forward. Invert flips it to scroll down =
+                // forward (some users expect the page-scroll-down direction).
+                const scrollUp = e.deltaY < 0;
+                const forward = playerSettings.invertWheelSeek ? !scrollUp : scrollUp;
+                const delta = forward ? WHEEL_STEP_SECONDS : -WHEEL_STEP_SECONDS;
                 scheduleWheelSeek(id, video, delta);
             }, { passive: false });
 
