@@ -35,9 +35,30 @@
 
     function saveQueue(q) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
+        mirrorQueueToConfig(q);
         updateAllButtons();
         updateLauncher();
         injectFilterBtn();
+    }
+
+    // Mirror the queue into Stash's own plugin config so native clients (the
+    // multiview-ios app) can read the same queue the user built here.
+    // localStorage stays the fast local source of truth; this is a debounced,
+    // fire-and-forget write-through. A failed mirror must never break local
+    // queueing. Read back elsewhere via configuration.plugins.multiView.queue.
+    let mirrorTimer = null;
+    function mirrorQueueToConfig(q) {
+        clearTimeout(mirrorTimer);
+        mirrorTimer = setTimeout(() => {
+            fetch('/graphql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: 'mutation($input: Map!) { configurePlugin(plugin_id: "multiView", input: $input) }',
+                    variables: { input: { queue: JSON.stringify(q) } }
+                })
+            }).catch(() => {});
+        }, 400);
     }
 
     function getSceneCount() {
