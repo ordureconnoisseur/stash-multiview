@@ -28,37 +28,90 @@
         injectFilterBtn();
     }
 
+    const MAX_QUEUE = 16;
+
+    // ── Queue storage ────────────────────────────────────────────────
+    // The queue is SHARED across four clients (this plugin, the player,
+    // binge web, binge-iOS, multiview-ios). The single source of truth is
+    // Stash's plugin config (configuration.plugins.multiView.queue);
+    // localStorage is only a fast local cache, always reconciled FROM
+    // config. Every mutation is a read-modify-write of config so a
+    // concurrent change from another client is never clobbered.
+
+    // Fast synchronous read of the local cache — for rendering buttons.
     function getQueue() {
         try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
         catch { return []; }
     }
 
-    function saveQueue(q) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
-        mirrorQueueToConfig(q);
-        updateAllButtons();
-        updateLauncher();
-        injectFilterBtn();
+    async function fetchConfigQueue() {
+        const r = await fetch('/graphql', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: '{ configuration { plugins } }' })
+        });
+        const j = await r.json();
+        const raw = j?.data?.configuration?.plugins?.multiView?.queue;
+        try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; }
+        catch { return []; }
     }
 
-    // Mirror the queue into Stash's own plugin config so native clients (the
-    // multiview-ios app) can read the same queue the user built here.
-    // localStorage stays the fast local source of truth; this is a debounced,
-    // fire-and-forget write-through. A failed mirror must never break local
-    // queueing. Read back elsewhere via configuration.plugins.multiView.queue.
-    let mirrorTimer = null;
-    function mirrorQueueToConfig(q) {
-        clearTimeout(mirrorTimer);
-        mirrorTimer = setTimeout(() => {
-            fetch('/graphql', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    query: 'mutation($input: Map!) { configurePlugin(plugin_id: "multiView", input: $input) }',
-                    variables: { input: { queue: JSON.stringify(q) } }
-                })
-            }).catch(() => {});
-        }, 400);
+    async function writeConfigQueue(q) {
+        await fetch('/graphql', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: 'mutation($input: Map!) { configurePlugin(plugin_id: "multiView", input: $input) }',
+                variables: { input: { queue: JSON.stringify(q) } }
+            })
+        });
+    }
+
+    // Reflect a queue into the local cache + refresh all UI.
+    function reflectQueue(q) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
+        updateAllButtons();
+        updateLauncher();
+        const fb = document.getElementById('mv-filter-add-btn');
+        if (fb) updateFilterBtn(fb);
+    }
+
+    // Pull the authoritative queue from config into the local cache.
+    // Cheap; called on load, on a poll, on visibility, and on the
+    // cross-tab storage event so the buttons always reflect reality.
+    let syncing = false;
+    async function syncFromConfig() {
+        if (syncing) return;
+        syncing = true;
+        try {
+            const q = await fetchConfigQueue();
+            if (JSON.stringify(q) !== localStorage.getItem(STORAGE_KEY)) reflectQueue(q);
+        } catch { /* offline / transient — keep the cache */ }
+        finally { syncing = false; }
+    }
+
+    // Apply a mutation to the LIVE config queue. `mutator(items)` returns
+    // the new array, or null to abort (already-satisfied / rejected). For
+    // scene toggles, pass {verify, want} to read back and retry if a
+    // concurrent writer clobbered our intent — idempotent set intents
+    // converge. configurePlugin is last-write-wins with no CAS, so this
+    // read-back-and-retry is what makes concurrency safe.
+    async function mutateConfigQueue(mutator, opts) {
+        opts = opts || {};
+        for (let attempt = 0; attempt < 4; attempt++) {
+            let items;
+            try { items = await fetchConfigQueue(); }
+            catch { return; }
+            const next = mutator(items.slice());
+            if (next === null) { reflectQueue(items); return; }
+            try { await writeConfigQueue(next); }
+            catch { return; }
+            if (!('verify' in opts)) { reflectQueue(next); return; }
+            let after;
+            try { after = await fetchConfigQueue(); }
+            catch { reflectQueue(next); return; }
+            if (after.includes(opts.verify) === opts.want) { reflectQueue(after); return; }
+            // Clobbered — loop and re-apply against the now-current queue.
+        }
+        try { reflectQueue(await fetchConfigQueue()); } catch { /* keep cache */ }
     }
 
     function getSceneCount() {
@@ -106,10 +159,13 @@
     function addFilterSlot() {
         const f = parseCurrentFilter();
         if (!f) return;
-        const q = getQueue();
-        if (q.length >= 16) { alert('Maximum 16 items in the multiview queue.'); return; }
-        q.push({ type: 'filter', filter: f });
-        saveQueue(q);
+        if (getQueue().length >= MAX_QUEUE) { alert('Maximum 16 items in the multiview queue.'); return; }
+        // Read-modify-write config so a concurrent change isn't clobbered.
+        mutateConfigQueue(items => {
+            if (items.length >= MAX_QUEUE) return null;
+            items.push({ type: 'filter', filter: f });
+            return items;
+        });
     }
 
     function isQueued(id) {
@@ -117,15 +173,22 @@
     }
 
     function toggleScene(id) {
-        const q = getQueue();
-        const idx = q.indexOf(String(id));
-        if (idx === -1) {
-            if (q.length >= 16) { alert('Maximum 16 items in the multiview queue.'); return; }
-            q.push(String(id));
-        } else {
-            q.splice(idx, 1);
-        }
-        saveQueue(q);
+        id = String(id);
+        const q0 = getQueue();
+        const want = !q0.includes(id);   // intent = the inverse of what the user saw
+        if (want && q0.length >= MAX_QUEUE) { alert('Maximum 16 items in the multiview queue.'); return; }
+        // Optimistic cache flip for instant button feedback.
+        const q = q0.slice();
+        if (want) q.push(id); else { const i = q.indexOf(id); if (i >= 0) q.splice(i, 1); }
+        reflectQueue(q);
+        // Apply the set intent to the live config, verifying it stuck.
+        mutateConfigQueue(items => {
+            const present = items.includes(id);
+            if (want === present) return null;             // already satisfied
+            if (want) { if (items.length >= MAX_QUEUE) return null; items.push(id); }
+            else { const k = items.indexOf(id); if (k >= 0) items.splice(k, 1); }
+            return items;
+        }, { verify: id, want });
     }
 
     // ?"??"? Picking Toggle Button ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
@@ -301,7 +364,7 @@
             // First press clears the queue; with an already-empty queue the
             // X dismisses the launcher by disabling picking mode.
             document.getElementById('mv-clear-queue').addEventListener('click', () => {
-                if (getQueue().length > 0) saveQueue([]);
+                if (getQueue().length > 0) mutateConfigQueue(() => []);
                 else togglePickingMode();
             });
         }
@@ -433,7 +496,8 @@
         }, 400);
     }
 
-    // Sync queue badge if player tab removes scenes
+    // Cross-tab: another tab changed the local cache (e.g. the player
+    // removed a tile) — refresh the buttons immediately.
     window.addEventListener('storage', e => {
         if (e.key === STORAGE_KEY) {
             updateAllButtons();
@@ -443,10 +507,24 @@
         }
     });
 
+    // Cross-CLIENT: the queue can change from binge web, binge-iOS, the
+    // player, or multiview-ios. Poll config while the tab is visible, and
+    // re-sync the moment it becomes visible, so the buttons never show a
+    // stale queue. (storage events only fire same-origin across tabs.)
+    setInterval(() => {
+        if (document.visibilityState === 'visible') syncFromConfig();
+    }, 5000);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') syncFromConfig();
+    });
+
     if (typeof PluginApi !== 'undefined' && PluginApi?.Event?.addEventListener) {
         PluginApi.Event.addEventListener('stash:location', onNavigate);
     }
 
+    // Seed the local cache from the authoritative config on load, then
+    // render.
+    syncFromConfig();
     onNavigate();
 })();
 

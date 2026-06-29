@@ -157,6 +157,78 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(q));
     }
 
+    // ── Shared queue source of truth: Stash plugin config ────────────
+    // The queue is shared with the Stash scene-list plugin, binge web,
+    // binge-iOS, and multiview-ios. Config is authoritative; localStorage
+    // is a local cache. The player seeds the cache from config on load,
+    // polls it, and writes its own changes (remove tile / roulette) back
+    // to config via read-modify-write so it never clobbers a concurrent
+    // change from another client.
+    async function fetchConfigQueue() {
+        const r = await fetch('/graphql', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: '{ configuration { plugins } }' })
+        });
+        const j = await r.json();
+        const raw = j?.data?.configuration?.plugins?.multiView?.queue;
+        try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; }
+        catch { return []; }
+    }
+
+    async function writeConfigQueue(q) {
+        await fetch('/graphql', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: 'mutation($input: Map!) { configurePlugin(plugin_id: "multiView", input: $input) }',
+                variables: { input: { queue: JSON.stringify(q) } }
+            })
+        });
+    }
+
+    // Number of in-flight config writes — the poll skips while > 0 so it
+    // can't seed the cache from a not-yet-committed config and revert our
+    // own just-made change.
+    let pendingConfigWrites = 0;
+
+    // Read-modify-write the live config queue (one pass: read fresh, apply
+    // mutator, write — so a concurrent add elsewhere is preserved). Also
+    // mirrors the result into the local cache.
+    async function mutateConfigQueue(mutator) {
+        pendingConfigWrites++;
+        try {
+            let items;
+            try { items = await fetchConfigQueue(); }
+            catch { return; }
+            const next = mutator(items.slice());
+            if (next === null) { saveQueue(items); return; }
+            try { await writeConfigQueue(next); } catch { return; }
+            saveQueue(next);
+        } finally { pendingConfigWrites--; }
+    }
+
+    // Seed/refresh the local cache from config. Returns true if the cache
+    // changed (so the caller can re-resolve + re-render the wall).
+    async function seedCacheFromConfig() {
+        try {
+            const q = await fetchConfigQueue();
+            const next = JSON.stringify(q);
+            if (next !== localStorage.getItem(STORAGE_KEY)) {
+                localStorage.setItem(STORAGE_KEY, next);
+                return true;
+            }
+        } catch { /* offline — keep cache */ }
+        return false;
+    }
+
+    // Re-resolve the wall from the current cache (shared by the storage
+    // event + the config poll). Preserves currently-playing filter slots.
+    function resyncFromCache() {
+        resolveQueuePreserving(getQueue()).then(resolved => {
+            queue = resolved;
+            loadSceneMeta(queue).then(render);
+        });
+    }
+
     // Mirrors Stash's translateJSON (ui/v2.5/src/models/list-filter/filter.ts):
     // c-params are JSON with `{` ↔ `(` substitution outside strings, and a
     // proper escape flag for `\` so `\\"` doesn't confuse the parser.
@@ -424,12 +496,24 @@
     }
 
     function removeScene(id) {
-        const idx = queue.indexOf(String(id));
+        id = String(id);
+        const idx = queue.indexOf(id);
         if (idx === -1) return;
         queue.splice(idx, 1);
         const raw = getQueue();
         if (idx < raw.length) raw.splice(idx, 1);
         saveQueue(raw);
+        // Persist the removal to config (RMW) so other clients see it.
+        // A scene-id string removes by value (robust against a changed
+        // queue); a filter-backed cell drops the slot at the same index.
+        mutateConfigQueue(items => {
+            const k = items.indexOf(id);
+            if (k >= 0) { items.splice(k, 1); return items; }
+            if (idx < items.length && typeof items[idx] === 'object') {
+                items.splice(idx, 1); return items;
+            }
+            return null;
+        });
         unmutedIds.delete(String(id));
         filterBackedCells.delete(String(id));
         disconnectAudio(id);
@@ -2022,12 +2106,24 @@
 
     // �"?�"? Cross-tab sync �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
+    // Same-origin cross-tab: the local cache changed in another tab.
     window.addEventListener('storage', e => {
         if (e.key !== STORAGE_KEY) return;
-        resolveQueuePreserving(getQueue()).then(resolved => {
-            queue = resolved;
-            loadSceneMeta(queue).then(render);
-        });
+        resyncFromCache();
+    });
+
+    // Cross-CLIENT: the queue can change from the Stash scene-list plugin,
+    // binge web, or binge-iOS. Poll config while visible (and on becoming
+    // visible) and re-resolve only when it actually changed — so the wall
+    // tracks the live queue without churning playback. Skips while our own
+    // write is in flight so it can't revert it.
+    setInterval(async () => {
+        if (document.visibilityState !== 'visible' || pendingConfigWrites > 0) return;
+        if (await seedCacheFromConfig()) resyncFromCache();
+    }, 5000);
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState !== 'visible' || pendingConfigWrites > 0) return;
+        if (await seedCacheFromConfig()) resyncFromCache();
     });
 
     // �"?�"? Roulette �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
@@ -2060,15 +2156,21 @@
                 if (!ids.length) return;
                 ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
                 queue = [...queue, ...ids];
-                // Append matching empty-filter slots so a reload reproduces them.
-                const saved = getQueue();
-                ids.forEach(() => saved.push({ type: 'filter', filter: {} }));
-                saveQueue(saved);
+                // Append matching empty-filter slots to config (RMW) so a
+                // reload reproduces them and other clients see the change.
+                await mutateConfigQueue(items => {
+                    const room = 16 - items.length;
+                    for (let i = 0; i < Math.min(ids.length, room); i++) {
+                        items.push({ type: 'filter', filter: {} });
+                    }
+                    return items;
+                });
             } else {
                 ids = ids.slice(0, want);
                 if (!ids.length) return;
-                // Save as filter slots so reopening the player loads fresh randoms.
-                saveQueue(ids.map(() => ({ type: 'filter', filter: {} })));
+                // Replace is a deliberate full reset of the queue to fresh
+                // random filter slots.
+                await mutateConfigQueue(() => ids.map(() => ({ type: 'filter', filter: {} })));
                 filterBackedCells.clear();
                 ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
                 queue = ids;
@@ -2201,6 +2303,9 @@
         playerSettings = loadPlayerSettings(savedSettings);
         applyFocusMode(playerSettings.focusMode);
 
+        // Seed the local cache from the authoritative config before
+        // resolving the wall, so the player opens on the live queue.
+        await seedCacheFromConfig();
         queue = await resolveQueue(getQueue());
 
         document.getElementById('mv-playpause-all-btn').addEventListener('click', playPauseAll);
