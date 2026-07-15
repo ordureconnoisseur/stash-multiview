@@ -2046,7 +2046,17 @@
         const videos = [...document.querySelectorAll('.mv-cell video')];
         const anyPlaying = videos.some(v => !v.paused);
         videos.forEach(v => anyPlaying ? v.pause() : v.play());
-        updatePlayPauseAllBtn(!anyPlaying);
+        // Each video's own 'play'/'pause' listener calls refreshPlayPauseAllBtn,
+        // but call it here too so the icon updates even if the grid is empty.
+        refreshPlayPauseAllBtn();
+    }
+
+    // Keeps the "Play/Pause All" icon in sync with actual per-video state,
+    // which drifts from it any time a video starts/stops outside this
+    // button (scene pause button, new scene added to the queue, etc.)
+    function refreshPlayPauseAllBtn() {
+        const videos = [...document.querySelectorAll('.mv-cell video')];
+        updatePlayPauseAllBtn(videos.some(v => !v.paused));
     }
 
     function updatePlayPauseAllBtn(playing) {
@@ -2512,10 +2522,12 @@
             video.addEventListener('pause', () => {
                 playPauseBtn.innerHTML = ICON_PLAY;
                 playPauseBtn.title = 'Play';
+                refreshPlayPauseAllBtn();
             });
             video.addEventListener('play', () => {
                 playPauseBtn.innerHTML = ICON_PAUSE;
                 playPauseBtn.title = 'Pause';
+                refreshPlayPauseAllBtn();
             });
 
             const oBtn = document.createElement('button');
@@ -2823,6 +2835,8 @@
             }
             cell.remove();
         }
+
+        refreshPlayPauseAllBtn();
     }
 
     function applyQualityToAllCells() {
