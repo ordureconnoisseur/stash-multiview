@@ -167,3 +167,14 @@ Every shortcut is **rebindable to a keyboard key _or_ a mouse button**. Open **S
 | Open Roulette | _unbound_ | |
 
 The grid-wide **Mute All**, **Pause All**, and **O All** actions live as buttons in the top bar.
+
+## Support
+
+Free, and staying that way. If it has earned a place in your setup and you feel like
+chipping in, there is [GitHub Sponsors](https://github.com/sponsors/ordureconnoisseur)
+and [Ko-fi](https://ko-fi.com/ordureconnoisseur).
+
+Current goal: an Apple Developer Program membership (99 USD/year). That is the one
+thing standing between the iOS ports of binge and multiview and a build that lasts
+longer than seven days on someone else's phone.
+
