@@ -86,7 +86,11 @@
     // �"?�"? State �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let queue = [];
+    let rawSlots = [];
+    let queueResync = null;
+    const deferredAdvances = new Set();
     let undoRoll = null;
+    let undoSceneId = null;
     let rouletteBusy = false;
     let queueGeneration = 0;
     let scenes = {};         // id ��' { id, title, streams }
@@ -264,7 +268,14 @@
     // event + the config poll). Preserves currently-playing filter slots.
     function resyncFromCache() {
         setUndoRoll(null);
-        void resolveQueuePreserving(getQueue());
+        const pending = resolveQueuePreserving(getQueue());
+        queueResync = pending;
+        pending.finally(() => {
+            if (queueResync === pending) {
+                queueResync = null;
+                flushDeferredAdvances();
+            }
+        });
     }
 
     // Mirrors Stash's translateJSON (ui/v2.5/src/models/list-filter/filter.ts):
@@ -508,6 +519,7 @@
             return existing || resolveFilterSlot(item, occupied);
         }));
         const resolved = [];
+        const indices = [];
         const filters = new Map();
         for (const [index, item] of rawQueue.entries()) {
             let id = candidates[index];
@@ -518,9 +530,11 @@
                 filters.set(id, item);
             }
             resolved.push(id);
+            indices.push(index);
         }
         if (generation !== queueGeneration) return;
         queue = resolved;
+        rawSlots = indices;
         filterBackedCells.clear();
         for (const [id, item] of filters) filterBackedCells.set(id, item);
         await loadSceneMeta(queue);
@@ -533,8 +547,11 @@
         if (idx === -1 || rouletteBusy) return;
         setUndoRoll(null);
         queue.splice(idx, 1);
+        const [rawIndex] = rawSlots.splice(idx, 1);
+        rawSlots = rawSlots.map(index => index > rawIndex ? index - 1 : index);
         const raw = getQueue();
-        if (idx < raw.length) raw.splice(idx, 1);
+        const priorItems = JSON.stringify(raw);
+        raw.splice(rawIndex, 1);
         saveQueue(raw);
         // Persist the removal to config (RMW) so other clients see it.
         // A scene-id string removes by value (robust against a changed
@@ -542,10 +559,12 @@
         mutateConfigQueue(items => {
             const k = items.indexOf(id);
             if (k >= 0) { items.splice(k, 1); return items; }
-            if (idx < items.length && typeof items[idx] === 'object') {
-                items.splice(idx, 1); return items;
+            if (JSON.stringify(items) === priorItems && typeof items[rawIndex] === 'object') {
+                items.splice(rawIndex, 1); return items;
             }
             return null;
+        }).then(result => {
+            if (result === null) resyncFromCache();
         });
         unmutedIds.delete(String(id));
         filterBackedCells.delete(String(id));
@@ -555,11 +574,28 @@
         render();
     }
 
+    function flushDeferredAdvances() {
+        if (rouletteBusy || queueResync) return;
+        for (const id of deferredAdvances) void advanceFilterCell(id);
+        deferredAdvances.clear();
+    }
+
     async function advanceFilterCell(id, manual = false) {
         const filterItem = filterBackedCells.get(id);
-        if (!filterItem || rouletteBusy) return;
-        const newId = await resolveFilterSlot(filterItem, new Set(queue));
-        if (rouletteBusy || filterBackedCells.get(id) !== filterItem || !queue.includes(id)) return;
+        if (!filterItem) return;
+        if (rouletteBusy || queueResync) {
+            if (!manual) deferredAdvances.add(id);
+            return;
+        }
+        const excluded = new Set(queue);
+        if (!manual && undoSceneId) excluded.add(undoSceneId);
+        const newId = await resolveFilterSlot(filterItem, excluded);
+        if (filterBackedCells.get(id) !== filterItem || !queue.includes(id)) return;
+        if (rouletteBusy || queueResync) {
+            if (!manual) deferredAdvances.add(id);
+            return;
+        }
+        if (!manual && newId && newId === undoSceneId) return;
         if (!newId || newId === id) {
             const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
             const video = cell?.querySelector('video');
@@ -576,7 +612,7 @@
                 replaceFilterScene(current, id, filterItem);
                 await loadSceneMeta([id]);
                 render();
-            });
+            }, id);
         }
         await loadSceneMeta([newId]);
         render();
@@ -2908,21 +2944,28 @@
 
     // �"?�"? Roulette �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
-    function setUndoRoll(undo) {
+    function refreshUndoButton() {
+        document.getElementById('mv-undo-roll-btn').disabled = rouletteBusy || !undoRoll;
+    }
+
+    function setUndoRoll(undo, sceneId = null) {
         undoRoll = undo;
-        document.getElementById('mv-undo-roll-btn').disabled = rouletteBusy || !undo;
+        undoSceneId = sceneId;
+        refreshUndoButton();
     }
 
     async function undoLastRoll() {
         if (!undoRoll || rouletteBusy) return;
         const undo = undoRoll;
+        const sceneId = undoSceneId;
         rouletteBusy = true;
         setUndoRoll(null);
         try {
-            if (await undo() === false) setUndoRoll(undo);
+            if (await undo() === false) setUndoRoll(undo, sceneId);
         } finally {
             rouletteBusy = false;
-            setUndoRoll(undoRoll);
+            refreshUndoButton();
+            flushDeferredAdvances();
         }
     }
 
@@ -2933,8 +2976,9 @@
     async function loadRoulette(count, mode = 'replace') {
         if (rouletteBusy) return;
         rouletteBusy = true;
-        setUndoRoll(undoRoll);
+        refreshUndoButton();
         try {
+            while (queueResync) await queueResync;
             const adding = mode === 'add';
             const want = adding ? Math.min(count, 16 - queue.length) : count;
             if (want <= 0) return;
@@ -2951,8 +2995,10 @@
             let ids = (data?.data?.findScenes?.scenes || []).map(s => String(s.id));
             const rouletteFilter = { type: 'filter', filter: {} };
 
+            while (queueResync) await queueResync;
             const cachedItems = JSON.stringify(getQueue());
             const priorScenes = queue.slice();
+            const priorSlots = rawSlots.slice();
             const priorFilters = new Map(filterBackedCells);
             let priorItems;
             const rolledItems = await mutateConfigQueue(items => {
@@ -2973,6 +3019,8 @@
             if (!adding) filterBackedCells.clear();
             ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
             queue = adding ? [...queue, ...ids] : ids;
+            const newSlots = ids.map((_, index) => index + (adding ? priorItems.length : 0));
+            rawSlots = adding ? [...rawSlots, ...newSlots] : newSlots;
             setUndoRoll(async () => {
                 const restored = await mutateConfigQueue(items =>
                     JSON.stringify(items) === JSON.stringify(rolledItems) ? priorItems : null
@@ -2983,6 +3031,7 @@
                     return;
                 }
                 queue = priorScenes;
+                rawSlots = priorSlots;
                 filterBackedCells.clear();
                 for (const [id, item] of priorFilters) filterBackedCells.set(id, item);
                 await loadSceneMeta(queue);
@@ -2992,7 +3041,8 @@
             render();
         } catch {} finally {
             rouletteBusy = false;
-            setUndoRoll(undoRoll);
+            refreshUndoButton();
+            flushDeferredAdvances();
         }
     }
 
