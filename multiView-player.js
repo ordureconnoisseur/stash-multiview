@@ -89,6 +89,7 @@
     let rawSlots = [];
     let queueResync = null;
     let queueRemoval = null;
+    let queueSyncDeferred = false;
     const deferredAdvances = new Set();
     let undoRoll = null;
     let undoSceneId = null;
@@ -570,7 +571,10 @@
             return null;
         }).then(result => {
             if (result === null) resyncFromCache();
-        }).finally(() => { queueRemoval = null; });
+        }).finally(() => {
+            queueRemoval = null;
+            flushDeferredQueueSync();
+        });
         unmutedIds.delete(String(id));
         filterBackedCells.delete(String(id));
         disconnectAudio(id);
@@ -857,7 +861,7 @@
         const hovered = hoveredCell(e)?.dataset.sceneId;
         const id = isRandomScene(hovered) ? hovered : queue.find(isRandomScene);
         if (id) return advanceFilterCell(id, true);
-        if (queue.length === 0) return loadRoulette(2);
+        if (queue.length === 0) return loadRoulette(2, getQueue().length ? 'add' : 'replace');
         if (queue.length === 1) return loadRoulette(1, 'add');
     }
 
@@ -2934,8 +2938,20 @@
     // Same-origin cross-tab: the local cache changed in another tab.
     window.addEventListener('storage', e => {
         if (e.key !== STORAGE_KEY) return;
+        if (pendingConfigWrites || rouletteBusy || queueRemoval) {
+            queueSyncDeferred = true;
+            return;
+        }
         resyncFromCache();
     });
+
+    function flushDeferredQueueSync() {
+        if (!queueSyncDeferred || pendingConfigWrites || rouletteBusy || queueRemoval) return;
+        queueSyncDeferred = false;
+        seedCacheFromConfig().then(changed => {
+            if (changed) resyncFromCache();
+        });
+    }
 
     // Cross-CLIENT: the queue can change from the Stash scene-list plugin,
     // binge web, or binge-iOS. Poll config while visible (and on becoming
@@ -2974,6 +2990,7 @@
         } finally {
             rouletteBusy = false;
             refreshUndoButton();
+            flushDeferredQueueSync();
             flushDeferredAdvances();
         }
     }
@@ -3059,6 +3076,7 @@
         } catch {} finally {
             rouletteBusy = false;
             refreshUndoButton();
+            flushDeferredQueueSync();
             flushDeferredAdvances();
         }
     }
