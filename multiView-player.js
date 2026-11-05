@@ -2,6 +2,8 @@
     'use strict';
 
     const STORAGE_KEY = 'stash-multiview-queue';
+    const VIEWS_KEY = 'stash-multiview-saved-views';
+    let paneSizes = [];
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
     const ROULETTE_MODE_KEY = 'stash-multiview-roulette-mode'; // 'replace' | 'add'
     const SETTINGS_KEY = 'stash-multiview-settings';
@@ -286,6 +288,7 @@
                 flushDeferredAdvances();
             }
         });
+        return pending;
     }
 
     // Mirrors Stash's translateJSON (ui/v2.5/src/models/list-filter/filter.ts):
@@ -1937,6 +1940,163 @@
         if (grid && grid.className !== 'layout-' + expectedLayout) {
             grid.className = 'layout-' + expectedLayout;
         }
+        applyPaneSizes();
+    }
+
+    function defaultPaneSize(grid) {
+        const layout = grid.className.match(/^layout-(\d+)x(\d+)$/);
+        return layout ? [100 / Number(layout[1]), 100 / Number(layout[2])] : [100, 100];
+    }
+
+    function applyPaneSizes() {
+        const grid = document.getElementById('mv-grid');
+        const custom = queue.some((_, index) => paneSizes[index]?.some(value => value !== null));
+        grid.toggleAttribute('data-custom-sizes', custom);
+        if (!custom) return;
+        const defaults = defaultPaneSize(grid);
+        Array.from(grid.children).forEach((cell, index) => {
+            const [width, height] = paneSizes[index] || [];
+            cell.style.setProperty('--mv-pane-width', (width ?? defaults[0]) + '%');
+            cell.style.setProperty('--mv-pane-height', (height ?? defaults[1]) + '%');
+        });
+    }
+
+    function readViews() {
+        try {
+            const views = JSON.parse(localStorage.getItem(VIEWS_KEY) || '[]');
+            return Array.isArray(views) ? views : [];
+        } catch { return []; }
+    }
+
+    async function restoreView(view) {
+        if (rouletteBusy || queueRemoval || queueResync) return false;
+        rouletteBusy = true;
+        refreshUndoButton();
+        try {
+            const result = await mutateConfigQueue(items =>
+                JSON.stringify(items) === resolvedRaw ? view.scenes : null
+            );
+            if (!result) {
+                if (result === null) await resyncFromCache();
+                return false;
+            }
+            paneSizes = view.sizes;
+            await resyncFromCache();
+            return true;
+        } finally {
+            rouletteBusy = false;
+            refreshUndoButton();
+            flushDeferredQueueSync();
+            flushDeferredAdvances();
+        }
+    }
+
+    function setupViews() {
+        const dialog = document.getElementById('mv-views');
+        const select = document.getElementById('mv-saved-views');
+        const form = document.getElementById('mv-save-view');
+        const status = document.getElementById('mv-view-status');
+        const paneControls = document.getElementById('mv-pane-sizes');
+        const load = document.getElementById('mv-load-view');
+        const remove = document.getElementById('mv-delete-view');
+        const reset = document.getElementById('mv-reset-sizes');
+
+        function refresh(selected) {
+            const names = readViews().map(view => view.name);
+            select.replaceChildren(...(names.length
+                ? names.map(name => new Option(name, name))
+                : [new Option('No saved views', '')]));
+            if (names.includes(selected)) select.value = selected;
+            load.disabled = remove.disabled = !names.length;
+            form.querySelector('button').disabled = !queue.length;
+            reset.disabled = !queue.length;
+            const defaults = defaultPaneSize(document.getElementById('mv-grid'));
+            paneControls.replaceChildren(...queue.map((id, index) => {
+                const row = document.createElement('fieldset');
+                const title = document.createElement('legend');
+                title.textContent = `Pane ${index + 1} · ${scenes[id]?.title || 'Video'}`;
+                row.append(title);
+                ['Width', 'Height'].forEach((axis, dimension) => {
+                    const label = document.createElement('label');
+                    label.textContent = axis + ' (%)';
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.min = 10;
+                    input.max = 100;
+                    input.value = paneSizes[index]?.[dimension] ?? Math.round(defaults[dimension]);
+                    input.addEventListener('change', () => {
+                        const value = input.valueAsNumber;
+                        if (!Number.isFinite(value)) {
+                            input.value = paneSizes[index]?.[dimension] ?? Math.round(defaults[dimension]);
+                            return;
+                        }
+                        const size = Math.max(10, Math.min(100, Math.round(value)));
+                        input.value = size;
+                        paneSizes[index] ||= [null, null];
+                        paneSizes[index][dimension] = size;
+                        applyPaneSizes();
+                    });
+                    label.append(input);
+                    row.append(label);
+                });
+                return row;
+            }));
+        }
+
+        function storeViews(views) {
+            try {
+                localStorage.setItem(VIEWS_KEY, JSON.stringify(views));
+                return true;
+            } catch {
+                status.textContent = 'This browser could not save the views.';
+                return false;
+            }
+        }
+
+        document.getElementById('mv-views-btn').addEventListener('click', () => {
+            if (playerSettings.focusMode) toggleFocusMode();
+            status.textContent = '';
+            refresh(select.value);
+            dialog.showModal();
+        });
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            const name = new FormData(form).get('name').trim();
+            if (!name || !queue.length) return;
+            const views = readViews();
+            if (views.some(view => view.name === name)) {
+                status.textContent = 'Choose a different name for this view.';
+                return;
+            }
+            const view = {
+                name,
+                scenes: queue.slice(),
+                sizes: queue.map((_, index) => paneSizes[index] || null)
+            };
+            if (!storeViews([...views, view])) return;
+            form.reset();
+            refresh(name);
+            status.textContent = 'View saved.';
+        });
+        load.addEventListener('click', async () => {
+            const view = readViews().find(item => item.name === select.value);
+            if (!view) return;
+            load.disabled = true;
+            try {
+                const restored = await restoreView(view);
+                status.textContent = restored ? 'View loaded.' : 'Could not load the view. Try again.';
+            } finally { refresh(view.name); }
+        });
+        remove.addEventListener('click', () => {
+            if (!storeViews(readViews().filter(view => view.name !== select.value))) return;
+            refresh();
+            status.textContent = 'View deleted.';
+        });
+        reset.addEventListener('click', () => {
+            paneSizes = [];
+            applyPaneSizes();
+            refresh(select.value);
+        });
     }
 
     function computeJustifiedLayout(aspectRatios, containerWidth, containerHeight, gap) {
@@ -2920,6 +3080,14 @@
             if (cid && queueSet.has(cid) && existing.get(cid) === cell) continue;
             removeRenderedCell(cell);
         }
+        queue.forEach((id, index) => {
+            const cell = existing.get(id);
+            if (cell && grid.children[index] !== cell) {
+                grid.insertBefore(cell, grid.children[index] || null);
+            }
+        });
+        applyPaneSizes();
+        if (playerSettings.focusMode) applyJustifiedLayout();
     }
 
     function applyQualityToAllCells() {
@@ -3243,6 +3411,7 @@
         document.getElementById('mv-focus-btn').addEventListener('click', toggleFocusMode);
         document.getElementById('mv-fullscreen-btn').addEventListener('click', toggleFullscreen);
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
+        setupViews();
         document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);
         document.getElementById('mv-undo-roll-btn').addEventListener('click', undoLastRoll);
         document.addEventListener('fullscreenchange', applyFullscreenIcon);
@@ -3250,7 +3419,7 @@
         document.addEventListener('keydown', e => {
             // Let modified chords (Ctrl/Cmd/Alt) and typing in fields pass through,
             // and stand down while a rebind capture is grabbing the next key.
-            if (keybindCaptureActive) return;
+            if (keybindCaptureActive || document.getElementById('mv-views').open) return;
             const tag = e.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
             const binding = normalizeKey(e.key);
