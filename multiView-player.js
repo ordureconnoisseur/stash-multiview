@@ -1964,7 +1964,14 @@
     function readViews() {
         try {
             const views = JSON.parse(localStorage.getItem(VIEWS_KEY) || '[]');
-            return Array.isArray(views) ? views : [];
+            if (!Array.isArray(views)) return [];
+            return views.filter(view => typeof view?.name === 'string' && view.name.length > 0
+                && Array.isArray(view.scenes) && view.scenes.length > 0 && view.scenes.length <= 16
+                && view.scenes.every(id => typeof id === 'string' && /^\d+$/.test(id))
+                && new Set(view.scenes).size === view.scenes.length
+                && Array.isArray(view.sizes) && view.sizes.length === view.scenes.length
+                && view.sizes.every(size => size === null || (Array.isArray(size) && size.length === 2
+                    && size.every(value => value === null || (Number.isInteger(value) && value >= 10 && value <= 100)))));
         } catch { return []; }
     }
 
@@ -2000,6 +2007,8 @@
         const load = document.getElementById('mv-load-view');
         const remove = document.getElementById('mv-delete-view');
         const reset = document.getElementById('mv-reset-sizes');
+        const grid = document.getElementById('mv-grid');
+        const visibleScenes = () => Array.from(grid.children, cell => cell.dataset.sceneId);
 
         function refresh(selected) {
             const names = readViews().map(view => view.name);
@@ -2008,10 +2017,11 @@
                 : [new Option('No saved views', '')]));
             if (names.includes(selected)) select.value = selected;
             load.disabled = remove.disabled = !names.length;
-            form.querySelector('button').disabled = !queue.length;
-            reset.disabled = !queue.length;
-            const defaults = defaultPaneSize(document.getElementById('mv-grid'));
-            paneControls.replaceChildren(...queue.map((id, index) => {
+            const visible = visibleScenes();
+            form.querySelector('button').disabled = !visible.length;
+            reset.disabled = !visible.length;
+            const defaults = defaultPaneSize(grid);
+            paneControls.replaceChildren(...visible.map((id, index) => {
                 const row = document.createElement('fieldset');
                 const title = document.createElement('legend');
                 title.textContent = `Pane ${index + 1} · ${scenes[id]?.title || 'Video'}`;
@@ -2062,7 +2072,8 @@
         form.addEventListener('submit', event => {
             event.preventDefault();
             const name = new FormData(form).get('name').trim();
-            if (!name || !queue.length) return;
+            const visible = visibleScenes();
+            if (!name || !visible.length) return;
             const views = readViews();
             if (views.some(view => view.name === name)) {
                 status.textContent = 'Choose a different name for this view.';
@@ -2070,8 +2081,8 @@
             }
             const view = {
                 name,
-                scenes: queue.slice(),
-                sizes: queue.map((_, index) => paneSizes[index] || null)
+                scenes: visible,
+                sizes: visible.map((_, index) => paneSizes[index] || null)
             };
             if (!storeViews([...views, view])) return;
             form.reset();
