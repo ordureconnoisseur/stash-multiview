@@ -257,8 +257,7 @@
         return next;
     }
 
-    // Seed/refresh the local cache from config. Returns true if the cache
-    // changed (so the caller can re-resolve + re-render the wall).
+    // Refresh the cache and report when the visible slots need to be resolved.
     function seedCacheFromConfig() {
         return navigator.locks?.request(STORAGE_KEY, refreshCacheFromConfig) ?? refreshCacheFromConfig();
     }
@@ -269,10 +268,8 @@
             const q = await fetchConfigQueue();
             if (pendingConfigWrites || generation !== queueGeneration) return false;
             const next = JSON.stringify(q);
-            if (next !== localStorage.getItem(STORAGE_KEY)) {
-                localStorage.setItem(STORAGE_KEY, next);
-                return true;
-            }
+            if (next !== localStorage.getItem(STORAGE_KEY)) localStorage.setItem(STORAGE_KEY, next);
+            return next !== resolvedRaw;
         } catch { /* offline — keep cache */ }
         return false;
     }
