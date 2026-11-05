@@ -2550,9 +2550,6 @@
 
         const layout = autoLayout(queue.length);
         grid.className = 'layout-' + layout;
-        // Correct layout immediately if videos already have dimensions (re-render case)
-        detectAndApplyOrientation();
-
         // Snapshot existing cells so add/cleanup use O(1) Map/Set lookups
         // instead of N querySelector + N queue.includes (O(N^2)). Newly
         // created cells sit at lower indices than the iterator, so the
@@ -3115,8 +3112,8 @@
                 grid.insertBefore(cell, grid.children[index] || null);
             }
         });
+        detectAndApplyOrientation();
         applyPaneSizes();
-        if (playerSettings.focusMode) applyJustifiedLayout();
         grid.dispatchEvent(new Event('mv-wall-rendered'));
     }
 
