@@ -87,6 +87,7 @@
 
     let queue = [];
     let rawSlots = [];
+    let resolvedRaw = '[]';
     let queueResync = null;
     let queueRemoval = null;
     let queueSyncDeferred = false;
@@ -540,6 +541,7 @@
         if (generation !== queueGeneration) return;
         queue = resolved;
         rawSlots = indices;
+        resolvedRaw = JSON.stringify(rawQueue);
         filterBackedCells.clear();
         for (const [id, item] of filters) filterBackedCells.set(id, item);
         await loadSceneMeta(queue);
@@ -555,9 +557,10 @@
         queue.splice(idx, 1);
         const [rawIndex] = rawSlots.splice(idx, 1);
         rawSlots = rawSlots.map(index => index > rawIndex ? index - 1 : index);
-        const raw = getQueue();
-        const priorItems = JSON.stringify(raw);
+        const priorItems = resolvedRaw;
+        const raw = JSON.parse(priorItems);
         raw.splice(rawIndex, 1);
+        resolvedRaw = JSON.stringify(raw);
         saveQueue(raw);
         // Persist the removal to config (RMW) so other clients see it.
         // A scene-id string removes by value (robust against a changed
@@ -3022,7 +3025,10 @@
             const rouletteFilter = { type: 'filter', filter: {} };
 
             while (queueRemoval || queueResync) await (queueRemoval || queueResync);
-            const cachedItems = JSON.stringify(getQueue());
+            while (JSON.stringify(getQueue()) !== resolvedRaw) {
+                await resolveQueuePreserving(getQueue());
+            }
+            const cachedItems = resolvedRaw;
             const priorScenes = queue.slice();
             const priorSlots = rawSlots.slice();
             const priorFilters = new Map(filterBackedCells);
@@ -3042,6 +3048,7 @@
                 if (JSON.stringify(getQueue()) !== cachedItems) resyncFromCache();
                 return;
             }
+            resolvedRaw = JSON.stringify(rolledItems);
             if (!adding) filterBackedCells.clear();
             ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
             queue = adding ? [...queue, ...ids] : ids;
@@ -3056,6 +3063,7 @@
                     resyncFromCache();
                     return;
                 }
+                resolvedRaw = JSON.stringify(restored);
                 if (adding) {
                     const kept = rawSlots.findIndex(index => index >= priorItems.length);
                     if (kept !== -1) {
