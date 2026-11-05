@@ -86,6 +86,8 @@
     // �"?�"? State �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let queue = [];
+    let undoRoll = null;
+    let rouletteBusy = false;
     let scenes = {};         // id ��' { id, title, streams }
     const unmutedIds = new Set();
     let openPopupId = null;
@@ -206,13 +208,16 @@
     }
 
     async function writeConfigQueue(q) {
-        await fetch('/graphql', {
+        const response = await fetch('/graphql', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: 'mutation($input: Map!) { configurePlugin(plugin_id: "multiView", input: $input) }',
                 variables: { input: { queue: JSON.stringify(q) } }
             })
         });
+        if (!response.ok || (await response.json()).errors?.length) {
+            throw new Error('Could not save the MultiView queue');
+        }
     }
 
     // Number of in-flight config writes — the poll skips while > 0 so it
@@ -233,6 +238,7 @@
             if (next === null) { saveQueue(items); return; }
             try { await writeConfigQueue(next); } catch { return; }
             saveQueue(next);
+            return next;
         } finally { pendingConfigWrites--; }
     }
 
@@ -253,6 +259,7 @@
     // Re-resolve the wall from the current cache (shared by the storage
     // event + the config poll). Preserves currently-playing filter slots.
     function resyncFromCache() {
+        setUndoRoll(null);
         resolveQueuePreserving(getQueue()).then(resolved => {
             queue = resolved;
             loadSceneMeta(queue).then(render);
@@ -528,7 +535,8 @@
     function removeScene(id) {
         id = String(id);
         const idx = queue.indexOf(id);
-        if (idx === -1) return;
+        if (idx === -1 || rouletteBusy) return;
+        setUndoRoll(null);
         queue.splice(idx, 1);
         const raw = getQueue();
         if (idx < raw.length) raw.splice(idx, 1);
@@ -552,23 +560,36 @@
         render();
     }
 
-    async function advanceFilterCell(id) {
+    async function advanceFilterCell(id, manual = false) {
         const filterItem = filterBackedCells.get(id);
-        if (!filterItem) return;
+        if (!filterItem || rouletteBusy) return;
         const newId = await resolveFilterSlot(filterItem, id);
+        if (rouletteBusy || filterBackedCells.get(id) !== filterItem || !queue.includes(id)) return;
         if (!newId || newId === id) {
             const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
             const video = cell?.querySelector('video');
             if (video) seekToStart(id, video);
             return;
         }
-        filterBackedCells.delete(id);
-        filterBackedCells.set(newId, filterItem);
-        if (unmutedIds.has(id)) { unmutedIds.delete(id); unmutedIds.add(newId); }
-        const qIdx = queue.indexOf(id);
-        if (qIdx !== -1) queue[qIdx] = newId;
+        if (queue.includes(newId)) return;
+        replaceFilterScene(id, newId, filterItem);
+        if (manual) {
+            setUndoRoll(async () => {
+                if (filterBackedCells.get(newId) !== filterItem || queue.includes(id)) return;
+                replaceFilterScene(newId, id, filterItem);
+                await loadSceneMeta([id]);
+                render();
+            });
+        }
         await loadSceneMeta([newId]);
         render();
+    }
+
+    function replaceFilterScene(id, newId, filterItem) {
+        queue[queue.indexOf(id)] = newId;
+        filterBackedCells.delete(id);
+        filterBackedCells.set(newId, filterItem);
+        if (unmutedIds.delete(id)) unmutedIds.add(newId);
     }
 
     function seekToStart(id, video) {
@@ -769,8 +790,9 @@
         { id: 'focus',          label: 'Toggle Focus Mode',       run: () => toggleFocusMode() },
         { id: 'fullscreen',     label: 'Toggle Full Screen',      run: () => toggleFullscreen() },
         { id: 'roulette',       label: 'Open Roulette',           run: () => openMenuPanel() },
+        { id: 'reroll',         label: 'Reroll one pane',         run: e => rerollPane(e) },
     ];
-    const DEFAULT_KEYBINDS = { playPauseHover: '', muteHover: 'Mouse1', oHover: '', loopSetA: 'a', loopSetB: 'b', loopClear: 'l', seekBack: 'ArrowLeft', seekForward: 'ArrowRight', focus: 'f', fullscreen: '', roulette: '' };
+    const DEFAULT_KEYBINDS = { playPauseHover: '', muteHover: 'Mouse1', oHover: '', loopSetA: 'a', loopSetB: 'b', loopClear: 'l', seekBack: 'ArrowLeft', seekForward: 'ArrowRight', focus: 'f', fullscreen: '', roulette: '', reroll: 'r' };
     // Targets where a non-left button keeps its native meaning, so a mouse
     // shortcut must NOT fire over them: links (middle-click opens a new tab) and
     // the settings/menu/volume panels (which contain their own controls). NOTE:
@@ -786,6 +808,17 @@
         return (e && e.target && e.target.closest && e.target.closest('.mv-cell'))
             || document.querySelector('.mv-cell:hover');
     }
+    function rerollPane(e) {
+        if (e.repeat) return;
+        const hovered = hoveredCell(e)?.dataset.sceneId;
+        const id = filterBackedCells.has(hovered)
+            ? hovered
+            : queue.find(sceneId => filterBackedCells.has(sceneId));
+        if (id) return advanceFilterCell(id, true);
+        if (queue.length === 0) return loadRoulette(2);
+        if (queue.length === 1) return loadRoulette(1, 'add');
+    }
+
     function muteHoveredCell(e) {
         const cell = hoveredCell(e);
         if (cell) toggleAudio(cell.dataset.sceneId);
@@ -868,6 +901,9 @@
     // a colliding default is dropped rather than leaving two actions on one key
     // (runBinding would silently fire whichever comes first in KEYBIND_ACTIONS).
     function mergeKeybinds(saved = {}) {
+        if (saved.roulette === 'r' && !('reroll' in saved)) {
+            saved = { ...saved, roulette: '', reroll: 'r' };
+        }
         const merged = { ...DEFAULT_KEYBINDS, ...saved };
         const taken = new Set(Object.values(saved).filter(Boolean));
         for (const id of Object.keys(merged)) {
@@ -2553,7 +2589,7 @@
             nextBtn.title = isFilterBacked ? 'Next video' : 'Restart video';
             nextBtn.addEventListener('click', e => {
                 e.stopPropagation();
-                if (isFilterBacked) advanceFilterCell(id);
+                if (isFilterBacked) advanceFilterCell(id, true);
                 else seekToStart(id, video);
             });
 
@@ -2878,11 +2914,32 @@
 
     // �"?�"? Roulette �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
+    function setUndoRoll(undo) {
+        undoRoll = undo;
+        document.getElementById('mv-undo-roll-btn').disabled = rouletteBusy || !undo;
+    }
+
+    async function undoLastRoll() {
+        if (!undoRoll || rouletteBusy) return;
+        const undo = undoRoll;
+        rouletteBusy = true;
+        setUndoRoll(null);
+        try {
+            await undo();
+        } finally {
+            rouletteBusy = false;
+            setUndoRoll(undoRoll);
+        }
+    }
+
     // mode 'replace' (default): the roll overwrites the whole grid with `count`
     // random scenes. mode 'add': append up to `count` random scenes to the
     // current grid (filter cards and all), capped at 16 and skipping scenes
     // already on screen — lets you mix a random roll alongside curated slots.
     async function loadRoulette(count, mode = 'replace') {
+        if (rouletteBusy) return;
+        rouletteBusy = true;
+        setUndoRoll(undoRoll);
         try {
             const adding = mode === 'add';
             const want = adding ? Math.min(count, 16 - queue.length) : count;
@@ -2900,42 +2957,54 @@
             let ids = (data?.data?.findScenes?.scenes || []).map(s => String(s.id));
             const rouletteFilter = { type: 'filter', filter: {} };
 
-            if (adding) {
+            const cachedItems = JSON.stringify(getQueue());
+            const priorScenes = queue.slice();
+            const priorFilters = new Map(filterBackedCells);
+            let priorItems;
+            const rolledItems = await mutateConfigQueue(items => {
+                if (JSON.stringify(items) !== cachedItems) return null;
+                priorItems = items.slice();
                 const have = new Set(queue);
-                ids = ids.filter(id => !have.has(id)).slice(0, want);
-                if (!ids.length) return;
-                ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
-                queue = [...queue, ...ids];
-                // Append matching empty-filter slots to config (RMW) so a
-                // reload reproduces them and other clients see the change.
-                await mutateConfigQueue(items => {
-                    const room = 16 - items.length;
-                    for (let i = 0; i < Math.min(ids.length, room); i++) {
-                        items.push({ type: 'filter', filter: {} });
-                    }
-                    return items;
-                });
-            } else {
-                ids = ids.slice(0, want);
-                if (!ids.length) return;
-                // Replace is a deliberate full reset of the queue to fresh
-                // random filter slots.
-                await mutateConfigQueue(() => ids.map(() => ({ type: 'filter', filter: {} })));
-                filterBackedCells.clear();
-                ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
-                queue = ids;
+                ids = adding
+                    ? ids.filter(id => !have.has(id)).slice(0, Math.min(want, Math.max(0, 16 - items.length)))
+                    : ids.slice(0, want);
+                if (!ids.length) return null;
+                const slots = ids.map(() => rouletteFilter);
+                return adding ? [...items, ...slots] : slots;
+            });
+            if (!rolledItems) {
+                if (JSON.stringify(getQueue()) !== cachedItems) resyncFromCache();
+                return;
             }
+            if (!adding) filterBackedCells.clear();
+            ids.forEach(id => filterBackedCells.set(id, rouletteFilter));
+            queue = adding ? [...queue, ...ids] : ids;
+            setUndoRoll(async () => {
+                const restored = await mutateConfigQueue(items =>
+                    JSON.stringify(items) === JSON.stringify(rolledItems) ? priorItems : null
+                );
+                if (!restored) {
+                    if (JSON.stringify(getQueue()) !== JSON.stringify(rolledItems)) resyncFromCache();
+                    return;
+                }
+                queue = priorScenes;
+                filterBackedCells.clear();
+                for (const [id, item] of priorFilters) filterBackedCells.set(id, item);
+                await loadSceneMeta(queue);
+                render();
+            });
             await loadSceneMeta(ids);
             render();
-        } catch {}
+        } catch {} finally {
+            rouletteBusy = false;
+            setUndoRoll(undoRoll);
+        }
     }
-
-    // �"?�"? Menu panel �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function openMenuPanel() {
         if (document.getElementById('mv-menu-panel')) { closeMenuPanel(); return; }
 
-        const savedCount = parseInt(localStorage.getItem(ROULETTE_COUNT_KEY) || '4');
+        const savedCount = parseInt(localStorage.getItem(ROULETTE_COUNT_KEY) || '2');
 
         const panel = document.createElement('div');
         panel.id = 'mv-menu-panel';
@@ -3065,6 +3134,7 @@
         document.getElementById('mv-fullscreen-btn').addEventListener('click', toggleFullscreen);
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
         document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);
+        document.getElementById('mv-undo-roll-btn').addEventListener('click', undoLastRoll);
         document.addEventListener('fullscreenchange', applyFullscreenIcon);
         applyFullscreenIcon();
         document.addEventListener('keydown', e => {
@@ -3074,6 +3144,11 @@
             const tag = e.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
             const binding = normalizeKey(e.key);
+            if (binding === 'r' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                e.preventDefault();
+                if (!e.repeat) undoLastRoll();
+                return;
+            }
             // The one exception: a modifier the user has given a seek role,
             // pressed with a key bound to a seek action, is ours. runBinding
             // calls preventDefault, which is also what stops Alt+Left from
