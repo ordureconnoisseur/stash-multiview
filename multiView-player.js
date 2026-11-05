@@ -148,7 +148,7 @@
     // �"?�"? Web Audio �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let audioCtx = null;
-    const cellGains = new Map(); // id ��' GainNode
+    const cellGains = new Map(); // Scene ID to its connected video and audio nodes.
 
     function getAudioCtx() {
         if (!audioCtx) {
@@ -168,7 +168,7 @@
             gain.gain.value = playerSettings.defaultVolume;
             source.connect(gain);
             gain.connect(ctx.destination);
-            cellGains.set(id, gain);
+            cellGains.set(id, { video, source, gain });
         } catch (e) {
             // Silently ignore �?" audio still works via video.volume fallback
         }
@@ -176,16 +176,16 @@
 
     function setGain(id, value) {
         getAudioCtx(); // ensure context is resumed
-        const gain = cellGains.get(id);
-        if (gain) gain.gain.value = value;
+        const audio = cellGains.get(id);
+        if (audio) audio.gain.gain.value = value;
     }
 
-    function disconnectAudio(id) {
-        const gain = cellGains.get(id);
-        if (gain) {
-            try { gain.disconnect(); } catch {}
-            cellGains.delete(id);
-        }
+    function disconnectAudio(id, video) {
+        const audio = cellGains.get(id);
+        if (!audio || (video && audio.video !== video)) return;
+        audio.source.disconnect();
+        audio.gain.disconnect();
+        cellGains.delete(id);
     }
 
     // �"?�"? Queue �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
@@ -1937,10 +1937,10 @@
 
         const grid = document.getElementById('mv-grid');
         const expectedLayout = autoLayout(queue.length, isPortrait);
-        if (grid && grid.className !== 'layout-' + expectedLayout) {
-            grid.className = 'layout-' + expectedLayout;
-        }
+        const changed = grid.className !== 'layout-' + expectedLayout;
+        if (changed) grid.className = 'layout-' + expectedLayout;
         applyPaneSizes();
+        if (changed) grid.dispatchEvent(new Event('mv-wall-rendered'));
     }
 
     function defaultPaneSize(grid) {
@@ -2524,6 +2524,7 @@
     function removeRenderedCell(cell) {
         const video = cell.querySelector('video');
         if (video) {
+            disconnectAudio(cell.dataset.sceneId, video);
             teardownPlayTracking(video);
             video._mvCleanup?.();
         }
@@ -2536,7 +2537,7 @@
         const titleEl = document.getElementById('mv-title');
 
         if (queue.length === 0) {
-            grid.innerHTML = '';
+            Array.from(grid.children).forEach(removeRenderedCell);
             grid.className = 'layout-1x1';
             empty.style.display = 'flex';
             titleEl.textContent = 'Stash Multiview';
