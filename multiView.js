@@ -50,9 +50,12 @@
             body: JSON.stringify({ query: '{ configuration { plugins } }' })
         });
         const j = await r.json();
-        const raw = j?.data?.configuration?.plugins?.multiView?.queue;
-        try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; }
-        catch { return []; }
+        const plugins = j?.data?.configuration?.plugins;
+        if (!r.ok || j.errors?.length || !plugins) throw new Error('Could not read the MultiView queue');
+        const raw = plugins.multiView?.queue;
+        const items = JSON.parse(raw || '[]');
+        if (!Array.isArray(items)) throw new Error('Invalid MultiView queue');
+        return items;
     }
 
     async function writeConfigQueue(q) {
@@ -82,8 +85,11 @@
         if (syncing) return;
         syncing = true;
         try {
-            const q = await fetchConfigQueue();
-            if (JSON.stringify(q) !== localStorage.getItem(STORAGE_KEY)) reflectQueue(q);
+            const refresh = async () => {
+                const q = await fetchConfigQueue();
+                if (JSON.stringify(q) !== localStorage.getItem(STORAGE_KEY)) reflectQueue(q);
+            };
+            await (navigator.locks?.request(STORAGE_KEY, refresh) ?? refresh());
         } catch { /* offline / transient — keep the cache */ }
         finally { syncing = false; }
     }

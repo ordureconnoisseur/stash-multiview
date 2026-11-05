@@ -210,9 +210,12 @@
             body: JSON.stringify({ query: '{ configuration { plugins } }' })
         });
         const j = await r.json();
-        const raw = j?.data?.configuration?.plugins?.multiView?.queue;
-        try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; }
-        catch { return []; }
+        const plugins = j?.data?.configuration?.plugins;
+        if (!r.ok || j.errors?.length || !plugins) throw new Error('Could not read the MultiView queue');
+        const raw = plugins.multiView?.queue;
+        const items = JSON.parse(raw || '[]');
+        if (!Array.isArray(items)) throw new Error('Invalid MultiView queue');
+        return items;
     }
 
     async function writeConfigQueue(q) {
@@ -256,7 +259,11 @@
 
     // Seed/refresh the local cache from config. Returns true if the cache
     // changed (so the caller can re-resolve + re-render the wall).
-    async function seedCacheFromConfig() {
+    function seedCacheFromConfig() {
+        return navigator.locks?.request(STORAGE_KEY, refreshCacheFromConfig) ?? refreshCacheFromConfig();
+    }
+
+    async function refreshCacheFromConfig() {
         const generation = queueGeneration;
         try {
             const q = await fetchConfigQueue();
