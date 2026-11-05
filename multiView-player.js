@@ -233,22 +233,25 @@
     // own just-made change.
     let pendingConfigWrites = 0;
 
-    // Read-modify-write the live config queue (one pass: read fresh, apply
-    // mutator, write — so a concurrent add elsewhere is preserved). Also
-    // mirrors the result into the local cache.
+    // Hold the same origin lock as the Stash scene picker while updating config.
     async function mutateConfigQueue(mutator) {
         pendingConfigWrites++;
         queueGeneration++;
         try {
-            let items;
-            try { items = await fetchConfigQueue(); }
-            catch { return; }
-            const next = mutator(items.slice());
-            if (next === null) { saveQueue(items); return null; }
-            try { await writeConfigQueue(next); } catch { return; }
-            saveQueue(next);
-            return next;
+            const update = () => updateConfigQueue(mutator);
+            return await (navigator.locks?.request(STORAGE_KEY, update) ?? update());
         } finally { pendingConfigWrites--; }
+    }
+
+    async function updateConfigQueue(mutator) {
+        let items;
+        try { items = await fetchConfigQueue(); }
+        catch { return; }
+        const next = mutator(items.slice());
+        if (next === null) { saveQueue(items); return null; }
+        try { await writeConfigQueue(next); } catch { return; }
+        saveQueue(next);
+        return next;
     }
 
     // Seed/refresh the local cache from config. Returns true if the cache
@@ -549,7 +552,7 @@
     }
 
     async function removeScene(id) {
-        while (queueRemoval) await queueRemoval;
+        while (queueRemoval || queueResync) await (queueRemoval || queueResync);
         id = String(id);
         const idx = queue.indexOf(id);
         if (idx === -1 || rouletteBusy) return;
@@ -573,7 +576,7 @@
             }
             return null;
         }).then(result => {
-            if (result === null) resyncFromCache();
+            if (result === null || (result && JSON.stringify(result) !== resolvedRaw)) resyncFromCache();
         }).finally(() => {
             queueRemoval = null;
             flushDeferredQueueSync();
@@ -864,8 +867,7 @@
         const hovered = hoveredCell(e)?.dataset.sceneId;
         const id = isRandomScene(hovered) ? hovered : queue.find(isRandomScene);
         if (id) return advanceFilterCell(id, true);
-        if (queue.length === 0) return loadRoulette(2, getQueue().length ? 'add' : 'replace');
-        if (queue.length === 1) return loadRoulette(1, 'add');
+        if (queue.length < 2) return loadRoulette(2, 'fill');
     }
 
     function muteHoveredCell(e) {
@@ -3001,15 +3003,16 @@
     // mode 'replace' (default): the roll overwrites the whole grid with `count`
     // random scenes. mode 'add': append up to `count` random scenes to the
     // current grid (filter cards and all), capped at 16 and skipping scenes
-    // already on screen — lets you mix a random roll alongside curated slots.
+    // already on screen. The R shortcut uses fill to reach two visible panes.
     async function loadRoulette(count, mode = 'replace') {
         if (rouletteBusy) return;
         rouletteBusy = true;
         refreshUndoButton();
         try {
             while (queueRemoval || queueResync) await (queueRemoval || queueResync);
-            const adding = mode === 'add';
-            const want = adding ? Math.min(count, 16 - queue.length) : count;
+            const adding = mode !== 'replace';
+            const limit = mode === 'fill' ? 2 : 16;
+            const want = adding ? Math.min(count, limit - queue.length) : count;
             if (want <= 0) return;
             // In add mode fetch a buffer so we can drop scenes already on the grid.
             const perPage = adding ? want + queue.length : want;
@@ -3038,7 +3041,8 @@
                 priorItems = items.slice();
                 const have = new Set(queue);
                 ids = adding
-                    ? ids.filter(id => !have.has(id)).slice(0, Math.min(want, Math.max(0, 16 - items.length)))
+                    ? ids.filter(id => !have.has(id)).slice(0, Math.max(0,
+                        Math.min(want, limit - queue.length, 16 - items.length)))
                     : ids.slice(0, want);
                 if (!ids.length) return null;
                 const slots = ids.map(() => rouletteFilter);

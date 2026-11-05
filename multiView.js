@@ -94,7 +94,12 @@
     // concurrent writer clobbered our intent — idempotent set intents
     // converge. configurePlugin is last-write-wins with no CAS, so this
     // read-back-and-retry is what makes concurrency safe.
-    async function mutateConfigQueue(mutator, opts) {
+    function mutateConfigQueue(mutator, opts) {
+        const update = () => updateConfigQueue(mutator, opts);
+        return navigator.locks?.request(STORAGE_KEY, update) ?? update();
+    }
+
+    async function updateConfigQueue(mutator, opts) {
         opts = opts || {};
         for (let attempt = 0; attempt < 4; attempt++) {
             let items;
