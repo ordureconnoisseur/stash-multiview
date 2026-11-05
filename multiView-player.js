@@ -88,6 +88,7 @@
     let queue = [];
     let undoRoll = null;
     let rouletteBusy = false;
+    let queueGeneration = 0;
     let scenes = {};         // id ��' { id, title, streams }
     const unmutedIds = new Set();
     let openPopupId = null;
@@ -230,12 +231,13 @@
     // mirrors the result into the local cache.
     async function mutateConfigQueue(mutator) {
         pendingConfigWrites++;
+        queueGeneration++;
         try {
             let items;
             try { items = await fetchConfigQueue(); }
             catch { return; }
             const next = mutator(items.slice());
-            if (next === null) { saveQueue(items); return; }
+            if (next === null) { saveQueue(items); return null; }
             try { await writeConfigQueue(next); } catch { return; }
             saveQueue(next);
             return next;
@@ -245,8 +247,10 @@
     // Seed/refresh the local cache from config. Returns true if the cache
     // changed (so the caller can re-resolve + re-render the wall).
     async function seedCacheFromConfig() {
+        const generation = queueGeneration;
         try {
             const q = await fetchConfigQueue();
+            if (pendingConfigWrites || generation !== queueGeneration) return false;
             const next = JSON.stringify(q);
             if (next !== localStorage.getItem(STORAGE_KEY)) {
                 localStorage.setItem(STORAGE_KEY, next);
@@ -260,10 +264,7 @@
     // event + the config poll). Preserves currently-playing filter slots.
     function resyncFromCache() {
         setUndoRoll(null);
-        resolveQueuePreserving(getQueue()).then(resolved => {
-            queue = resolved;
-            loadSceneMeta(queue).then(render);
-        });
+        void resolveQueuePreserving(getQueue());
     }
 
     // Mirrors Stash's translateJSON (ui/v2.5/src/models/list-filter/filter.ts):
@@ -468,11 +469,11 @@
         return Object.keys(sf).length ? sf : undefined;
     }
 
-    // excludeId: fetch 3 candidates so we can skip the current scene when advancing
-    async function resolveFilterSlot(item, excludeId = null) {
+    // Request enough candidates to skip scenes already visible in the grid.
+    async function resolveFilterSlot(item, excluded = new Set()) {
         try {
             const f = item.filter || {};
-            const findFilter = { per_page: excludeId ? 3 : 1, sort: 'random' };
+            const findFilter = { per_page: excluded.size + 1, sort: 'random' };
             if (f.q) findFilter.q = f.q;
             const res = await fetch('/graphql', {
                 method: 'POST',
@@ -484,52 +485,46 @@
             });
             const data = await res.json();
             const list = data?.data?.findScenes?.scenes || [];
-            const pick = excludeId ? (list.find(s => String(s.id) !== excludeId) || list[0]) : list[0];
+            const pick = list.find(s => !excluded.has(String(s.id)));
             return pick ? String(pick.id) : null;
         } catch { return null; }
     }
 
-    async function resolveQueue(rawQueue) {
-        filterBackedCells.clear();
-        const resolved = await Promise.all(
-            rawQueue.map(async item => {
-                if (typeof item === 'string') return item;
-                const id = await resolveFilterSlot(item);
-                if (id) filterBackedCells.set(id, item);
-                return id;
-            })
-        );
-        return resolved.filter(Boolean);
-    }
-
-    // Like resolveQueue but reuses currently-playing IDs for existing filter slots
-    // so adding a scene from Stash doesn't interrupt videos already playing.
+    // Reuse matching live slots where possible and reserve all pinned scene IDs
+    // before resolving filters, even if a pinned scene appears later in the grid.
     async function resolveQueuePreserving(rawQueue) {
+        const generation = ++queueGeneration;
+        const occupied = new Set(rawQueue.filter(item => typeof item === 'string'));
         const available = new Map();
         for (const [id, item] of filterBackedCells) {
+            if (occupied.has(id)) continue;
             const key = JSON.stringify(item.filter || {});
             if (!available.has(key)) available.set(key, []);
             available.get(key).push(id);
         }
-        const newFilterBackedCells = new Map();
-        const resolved = await Promise.all(
-            rawQueue.map(async item => {
-                if (typeof item === 'string') return item;
-                const key = JSON.stringify(item.filter || {});
-                const pool = available.get(key);
-                if (pool && pool.length > 0) {
-                    const id = pool.shift();
-                    newFilterBackedCells.set(id, item);
-                    return id;
-                }
-                const id = await resolveFilterSlot(item);
-                if (id) newFilterBackedCells.set(id, item);
-                return id;
-            })
-        );
+        const candidates = await Promise.all(rawQueue.map(item => {
+            if (typeof item === 'string') return item;
+            const existing = available.get(JSON.stringify(item.filter || {}))?.shift();
+            return existing || resolveFilterSlot(item, occupied);
+        }));
+        const resolved = [];
+        const filters = new Map();
+        for (const [index, item] of rawQueue.entries()) {
+            let id = candidates[index];
+            if (typeof item !== 'string') {
+                if (occupied.has(id)) id = await resolveFilterSlot(item, occupied);
+                if (!id) continue;
+                occupied.add(id);
+                filters.set(id, item);
+            }
+            resolved.push(id);
+        }
+        if (generation !== queueGeneration) return;
+        queue = resolved;
         filterBackedCells.clear();
-        for (const [k, v] of newFilterBackedCells) filterBackedCells.set(k, v);
-        return resolved.filter(Boolean);
+        for (const [id, item] of filters) filterBackedCells.set(id, item);
+        await loadSceneMeta(queue);
+        render();
     }
 
     function removeScene(id) {
@@ -563,7 +558,7 @@
     async function advanceFilterCell(id, manual = false) {
         const filterItem = filterBackedCells.get(id);
         if (!filterItem || rouletteBusy) return;
-        const newId = await resolveFilterSlot(filterItem, id);
+        const newId = await resolveFilterSlot(filterItem, new Set(queue));
         if (rouletteBusy || filterBackedCells.get(id) !== filterItem || !queue.includes(id)) return;
         if (!newId || newId === id) {
             const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
@@ -572,11 +567,13 @@
             return;
         }
         if (queue.includes(newId)) return;
+        const slot = queue.indexOf(id);
         replaceFilterScene(id, newId, filterItem);
         if (manual) {
             setUndoRoll(async () => {
-                if (filterBackedCells.get(newId) !== filterItem || queue.includes(id)) return;
-                replaceFilterScene(newId, id, filterItem);
+                const current = queue[slot];
+                if (filterBackedCells.get(current) !== filterItem || queue.includes(id)) return;
+                replaceFilterScene(current, id, filterItem);
                 await loadSceneMeta([id]);
                 render();
             });
@@ -901,9 +898,6 @@
     // a colliding default is dropped rather than leaving two actions on one key
     // (runBinding would silently fire whichever comes first in KEYBIND_ACTIONS).
     function mergeKeybinds(saved = {}) {
-        if (saved.roulette === 'r' && !('reroll' in saved)) {
-            saved = { ...saved, roulette: '', reroll: 'r' };
-        }
         const merged = { ...DEFAULT_KEYBINDS, ...saved };
         const taken = new Set(Object.values(saved).filter(Boolean));
         for (const id of Object.keys(merged)) {
@@ -2925,7 +2919,7 @@
         rouletteBusy = true;
         setUndoRoll(null);
         try {
-            await undo();
+            if (await undo() === false) setUndoRoll(undo);
         } finally {
             rouletteBusy = false;
             setUndoRoll(undoRoll);
@@ -2983,8 +2977,9 @@
                 const restored = await mutateConfigQueue(items =>
                     JSON.stringify(items) === JSON.stringify(rolledItems) ? priorItems : null
                 );
-                if (!restored) {
-                    if (JSON.stringify(getQueue()) !== JSON.stringify(rolledItems)) resyncFromCache();
+                if (restored === undefined) return false;
+                if (restored === null) {
+                    resyncFromCache();
                     return;
                 }
                 queue = priorScenes;
@@ -3125,7 +3120,7 @@
         // Seed the local cache from the authoritative config before
         // resolving the wall, so the player opens on the live queue.
         await seedCacheFromConfig();
-        queue = await resolveQueue(getQueue());
+        await resolveQueuePreserving(getQueue());
 
         document.getElementById('mv-playpause-all-btn').addEventListener('click', playPauseAll);
         document.getElementById('mv-mute-all-btn').addEventListener('click', toggleMuteAll);
@@ -3144,7 +3139,8 @@
             const tag = e.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
             const binding = normalizeKey(e.key);
-            if (binding === 'r' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (binding === 'r' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+                    && !isSeekChord(e, binding)) {
                 e.preventDefault();
                 if (!e.repeat) undoLastRoll();
                 return;
@@ -3199,8 +3195,6 @@
             }
         });
 
-        await loadSceneMeta(queue);
-        render();
         startProgressSaveLoop();
     }
 

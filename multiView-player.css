@@ -103,6 +103,10 @@ html, body {
 }
 #mv-undo-roll-btn:enabled { color: #ffa34f; }
 #mv-undo-roll-btn:disabled { opacity: 0.45; cursor: default; }
+@media (max-width: 500px) {
+    #mv-topbar { gap: 4px; padding-inline: 6px; }
+    #mv-undo-roll-btn { min-width: 52px; padding-inline: 4px; font-size: 12px; }
+}
 
 .mv-topbar-icon-btn:hover { background: #2a2a2a; color: #ccc; }
 .mv-topbar-icon-btn.active { background: #1a3a1a; border-color: #4a4; color: #6d6; }
