@@ -2329,6 +2329,20 @@
 
     // �"?�"? Render �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
+    function renderedRole(id) {
+        if (!filterBackedCells.has(id)) return 'pinned';
+        return isRandomScene(id) ? 'random' : 'filter';
+    }
+
+    function removeRenderedCell(cell) {
+        const video = cell.querySelector('video');
+        if (video) {
+            teardownPlayTracking(video);
+            video._mvCleanup?.();
+        }
+        cell.remove();
+    }
+
     function render() {
         const grid = document.getElementById('mv-grid');
         const empty = document.getElementById('mv-empty');
@@ -2355,9 +2369,14 @@
         // created cells sit at lower indices than the iterator, so the
         // refCell forward-search never needs to see them.
         const existing = new Map();
-        for (const cell of grid.children) {
+        for (const cell of Array.from(grid.children)) {
             const cid = cell.dataset.sceneId;
-            if (cid && !existing.has(cid)) existing.set(cid, cell); // canonical = first cell per id
+            if (!cid) continue;
+            if (cell.dataset.sceneRole !== renderedRole(cid)) {
+                removeRenderedCell(cell);
+                continue;
+            }
+            if (!existing.has(cid)) existing.set(cid, cell);
         }
         const queueSet = new Set(queue);
 
@@ -2372,7 +2391,7 @@
             const isFilterBacked = filterBackedCells.has(id);
             cell.className = 'mv-cell' + (isFilterBacked ? ' mv-cell--filter' : '');
             cell.dataset.sceneId = id;
-
+            cell.dataset.sceneRole = renderedRole(id);
 
             const video = document.createElement('video');
             const baseSrc = pickStream(id);
@@ -2899,12 +2918,7 @@
         for (const cell of Array.from(grid.children)) {
             const cid = cell.dataset.sceneId;
             if (cid && queueSet.has(cid) && existing.get(cid) === cell) continue;
-            const v = cell.querySelector('video');
-            if (v) {
-                teardownPlayTracking(v);
-                v._mvCleanup?.();
-            }
-            cell.remove();
+            removeRenderedCell(cell);
         }
     }
 
