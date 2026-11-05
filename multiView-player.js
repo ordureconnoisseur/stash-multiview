@@ -855,7 +855,7 @@
     // plain buttons are deliberately NOT excluded — the big play button covers a
     // cell's center, and middle/right-clicking it should still fire the shortcut
     // (left-clicks are ignored by the dispatcher via e.button === 0).
-    const MOUSE_BIND_EXCLUDE = 'a, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel';
+    const MOUSE_BIND_EXCLUDE = 'a, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel, #mv-views';
     const MOUSE_LABELS = { Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click', Mouse3: 'Mouse Back', Mouse4: 'Mouse Forward' };
 
     // The cell a shortcut should act on: the click target's cell for mouse
@@ -1950,11 +1950,12 @@
 
     function applyPaneSizes() {
         const grid = document.getElementById('mv-grid');
-        const custom = queue.some((_, index) => paneSizes[index]?.some(value => value !== null));
+        const cells = Array.from(grid.children);
+        const custom = cells.some((_, index) => paneSizes[index]?.some(value => value !== null));
         grid.toggleAttribute('data-custom-sizes', custom);
         if (!custom) return;
         const defaults = defaultPaneSize(grid);
-        Array.from(grid.children).forEach((cell, index) => {
+        cells.forEach((cell, index) => {
             const [width, height] = paneSizes[index] || [];
             cell.style.setProperty('--mv-pane-width', (width ?? defaults[0]) + '%');
             cell.style.setProperty('--mv-pane-height', (height ?? defaults[1]) + '%');
@@ -2017,10 +2018,18 @@
                 : [new Option('No saved views', '')]));
             if (names.includes(selected)) select.value = selected;
             load.disabled = remove.disabled = !names.length;
+            refreshPanes(true);
+        }
+
+        let paneSignature = '';
+        function refreshPanes(force = false) {
             const visible = visibleScenes();
             form.querySelector('button').disabled = !visible.length;
             reset.disabled = !visible.length;
             const defaults = defaultPaneSize(grid);
+            const signature = JSON.stringify([visible, defaults]);
+            if (!force && (signature === paneSignature || paneControls.contains(document.activeElement))) return;
+            paneSignature = signature;
             paneControls.replaceChildren(...visible.map((id, index) => {
                 const row = document.createElement('fieldset');
                 const title = document.createElement('legend');
@@ -2035,6 +2044,7 @@
                     input.max = 100;
                     input.value = paneSizes[index]?.[dimension] ?? Math.round(defaults[dimension]);
                     input.addEventListener('change', () => {
+                        if (visibleScenes()[index] !== id) return;
                         const value = input.valueAsNumber;
                         if (!Number.isFinite(value)) {
                             input.value = paneSizes[index]?.[dimension] ?? Math.round(defaults[dimension]);
@@ -2063,8 +2073,14 @@
             }
         }
 
+        grid.addEventListener('mv-wall-rendered', () => {
+            if (dialog.open) refreshPanes();
+        });
+        paneControls.addEventListener('focusout', () => queueMicrotask(() => {
+            if (dialog.open) refreshPanes();
+        }));
+
         document.getElementById('mv-views-btn').addEventListener('click', () => {
-            if (playerSettings.focusMode) toggleFocusMode();
             status.textContent = '';
             refresh(select.value);
             dialog.showModal();
@@ -2524,6 +2540,7 @@
             grid.className = 'layout-1x1';
             empty.style.display = 'flex';
             titleEl.textContent = 'Stash Multiview';
+            grid.dispatchEvent(new Event('mv-wall-rendered'));
             return;
         }
 
@@ -3091,7 +3108,7 @@
             if (cid && queueSet.has(cid) && existing.get(cid) === cell) continue;
             removeRenderedCell(cell);
         }
-        queue.forEach((id, index) => {
+        Array.from(queueSet).forEach((id, index) => {
             const cell = existing.get(id);
             if (cell && grid.children[index] !== cell) {
                 grid.insertBefore(cell, grid.children[index] || null);
@@ -3099,6 +3116,7 @@
         });
         applyPaneSizes();
         if (playerSettings.focusMode) applyJustifiedLayout();
+        grid.dispatchEvent(new Event('mv-wall-rendered'));
     }
 
     function applyQualityToAllCells() {
