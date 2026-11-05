@@ -88,6 +88,7 @@
     let queue = [];
     let rawSlots = [];
     let queueResync = null;
+    let queueRemoval = null;
     const deferredAdvances = new Set();
     let undoRoll = null;
     let undoSceneId = null;
@@ -480,11 +481,10 @@
         return Object.keys(sf).length ? sf : undefined;
     }
 
-    // Request enough candidates to skip scenes already visible in the grid.
-    async function resolveFilterSlot(item, excluded = new Set()) {
+    async function findFilterScenes(item, count) {
         try {
             const f = item.filter || {};
-            const findFilter = { per_page: excluded.size + 1, sort: 'random' };
+            const findFilter = { per_page: count, sort: 'random' };
             if (f.q) findFilter.q = f.q;
             const res = await fetch('/graphql', {
                 method: 'POST',
@@ -496,9 +496,13 @@
             });
             const data = await res.json();
             const list = data?.data?.findScenes?.scenes || [];
-            const pick = list.find(s => !excluded.has(String(s.id)));
-            return pick ? String(pick.id) : null;
-        } catch { return null; }
+            return list.map(scene => String(scene.id));
+        } catch { return []; }
+    }
+
+    async function resolveFilterSlot(item, excluded) {
+        const candidates = await findFilterScenes(item, excluded.size + 1);
+        return candidates.find(id => !excluded.has(id));
     }
 
     // Reuse matching live slots where possible and reserve all pinned scene IDs
@@ -541,7 +545,8 @@
         render();
     }
 
-    function removeScene(id) {
+    async function removeScene(id) {
+        while (queueRemoval) await queueRemoval;
         id = String(id);
         const idx = queue.indexOf(id);
         if (idx === -1 || rouletteBusy) return;
@@ -556,7 +561,7 @@
         // Persist the removal to config (RMW) so other clients see it.
         // A scene-id string removes by value (robust against a changed
         // queue); a filter-backed cell drops the slot at the same index.
-        mutateConfigQueue(items => {
+        queueRemoval = mutateConfigQueue(items => {
             const k = items.indexOf(id);
             if (k >= 0) { items.splice(k, 1); return items; }
             if (JSON.stringify(items) === priorItems && typeof items[rawIndex] === 'object') {
@@ -565,7 +570,7 @@
             return null;
         }).then(result => {
             if (result === null) resyncFromCache();
-        });
+        }).finally(() => { queueRemoval = null; });
         unmutedIds.delete(String(id));
         filterBackedCells.delete(String(id));
         disconnectAudio(id);
@@ -589,20 +594,21 @@
         }
         const excluded = new Set(queue);
         if (!manual && undoSceneId) excluded.add(undoSceneId);
-        const newId = await resolveFilterSlot(filterItem, excluded);
+        const candidates = await findFilterScenes(filterItem, excluded.size + 1);
         if (filterBackedCells.get(id) !== filterItem || !queue.includes(id)) return;
         if (rouletteBusy || queueResync) {
             if (!manual) deferredAdvances.add(id);
             return;
         }
-        if (!manual && newId && newId === undoSceneId) return;
-        if (!newId || newId === id) {
+        const newId = candidates.find(candidate =>
+            !queue.includes(candidate) && (manual || candidate !== undoSceneId)
+        );
+        if (!newId) {
             const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
             const video = cell?.querySelector('video');
             if (video) seekToStart(id, video);
             return;
         }
-        if (queue.includes(newId)) return;
         const slot = queue.indexOf(id);
         replaceFilterScene(id, newId, filterItem);
         if (manual) {
@@ -841,12 +847,15 @@
         return (e && e.target && e.target.closest && e.target.closest('.mv-cell'))
             || document.querySelector('.mv-cell:hover');
     }
+    function isRandomScene(id) {
+        const item = filterBackedCells.get(id);
+        return !!item && Object.keys(item.filter || {}).length === 0;
+    }
+
     function rerollPane(e) {
         if (e.repeat) return;
         const hovered = hoveredCell(e)?.dataset.sceneId;
-        const id = filterBackedCells.has(hovered)
-            ? hovered
-            : queue.find(sceneId => filterBackedCells.has(sceneId));
+        const id = isRandomScene(hovered) ? hovered : queue.find(isRandomScene);
         if (id) return advanceFilterCell(id, true);
         if (queue.length === 0) return loadRoulette(2);
         if (queue.length === 1) return loadRoulette(1, 'add');
@@ -2527,7 +2536,7 @@
             sceneTitleEl.target = '_blank';
             sceneTitleEl.rel = 'noopener';
             if (isFilterBacked) {
-                const hasConstraints = Object.keys(filterBackedCells.get(id)?.filter || {}).length > 0;
+                const hasConstraints = !isRandomScene(id);
                 const label = document.createElement('span');
                 label.className = 'mv-filter-label';
                 label.textContent = hasConstraints ? 'Filter: ' : 'Random: ';
@@ -2978,7 +2987,7 @@
         rouletteBusy = true;
         refreshUndoButton();
         try {
-            while (queueResync) await queueResync;
+            while (queueRemoval || queueResync) await (queueRemoval || queueResync);
             const adding = mode === 'add';
             const want = adding ? Math.min(count, 16 - queue.length) : count;
             if (want <= 0) return;
@@ -2995,7 +3004,7 @@
             let ids = (data?.data?.findScenes?.scenes || []).map(s => String(s.id));
             const rouletteFilter = { type: 'filter', filter: {} };
 
-            while (queueResync) await queueResync;
+            while (queueRemoval || queueResync) await (queueRemoval || queueResync);
             const cachedItems = JSON.stringify(getQueue());
             const priorScenes = queue.slice();
             const priorSlots = rawSlots.slice();
@@ -3030,10 +3039,18 @@
                     resyncFromCache();
                     return;
                 }
-                queue = priorScenes;
-                rawSlots = priorSlots;
-                filterBackedCells.clear();
-                for (const [id, item] of priorFilters) filterBackedCells.set(id, item);
+                if (adding) {
+                    const kept = rawSlots.findIndex(index => index >= priorItems.length);
+                    if (kept !== -1) {
+                        rawSlots.splice(kept);
+                        for (const id of queue.splice(kept)) filterBackedCells.delete(id);
+                    }
+                } else {
+                    queue = priorScenes;
+                    rawSlots = priorSlots;
+                    filterBackedCells.clear();
+                    for (const [id, item] of priorFilters) filterBackedCells.set(id, item);
+                }
                 await loadSceneMeta(queue);
                 render();
             });
