@@ -384,7 +384,7 @@ body:not(.mv-focus) #mv-grid[data-custom-sizes] > .mv-cell {
     #mv-grid[data-custom-sizes] .mv-cell-btn { width: 23px; height: 23px; padding: 0 2px; }
     #mv-grid[data-custom-sizes] .mv-o-btn { width: auto; min-width: 23px; gap: 2px; }
     #mv-grid[data-custom-sizes] .mv-o-btn span { max-width: 26px; overflow: hidden; }
-    #mv-grid[data-custom-sizes] .mv-vol-popup { bottom: 30px; max-height: calc(100% - 32px); overflow: auto; }
+    body:not(.mv-focus) #mv-grid[data-custom-sizes] .mv-cell .mv-vol-popup { bottom: 30px; max-height: calc(100% - 32px); }
 }
 
 /* ── Filter card title label ───────────────────────────────────────────────── */
@@ -600,6 +600,11 @@ body:not(.mv-focus) #mv-grid[data-custom-sizes] > .mv-cell {
     align-items: center;
     gap: 8px;
     backdrop-filter: blur(6px);
+}
+
+body:not(.mv-focus) #mv-grid[data-custom-sizes] .mv-vol-popup {
+    max-height: calc(100% - 46px);
+    overflow: auto;
 }
 
 .mv-vol-popup.is-open {
