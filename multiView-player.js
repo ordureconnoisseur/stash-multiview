@@ -4,7 +4,7 @@
     const STORAGE_KEY = 'stash-multiview-queue';
     const VIEWS_KEY = 'stash-multiview-saved-views';
     let paneSizes = [];
-    let viewSeekController = null;
+    let favoritePositions = null;
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
     const ROULETTE_MODE_KEY = 'stash-multiview-roulette-mode'; // 'replace' | 'add'
     const SETTINGS_KEY = 'stash-multiview-settings';
@@ -663,8 +663,7 @@
 
     // ── Seek modifiers ─────────────────────────────────────────────────────
     // Two modifier roles, both user-selectable in Settings. They are roles
-    // rather than bindings because the keybind format holds a single bare key
-    // (see normalizeKey) and has nowhere to put a modifier.
+    // in addition to any modifier included in a seek action's keybind.
     //
     //  - fine: shrink the seek step, and scale down seekbar drag travel.
     //  - allCells: apply the seek to every cell instead of the hovered one.
@@ -971,9 +970,19 @@
     // Actions that read the seek modifiers, so a chord using one is meant for
     // us rather than for the browser.
     const SEEK_ACTION_IDS = ['seekBack', 'seekForward'];
-    function isSeekChord(e, binding) {
-        if (!binding || !(isFineSeek(e) || isAllCellsSeek(e))) return false;
-        return SEEK_ACTION_IDS.some(id => playerSettings.keybinds[id] === binding);
+    function matchingSeekBinding(e) {
+        const held = keyboardBinding(e).split('+');
+        const key = held.pop();
+        const roles = [playerSettings.fineModifier, playerSettings.allCellsModifier];
+        const allowed = roles.flatMap(role => role === 'ctrl' ? ['Ctrl', 'Meta']
+            : role === 'shift' ? ['Shift'] : role === 'alt' ? ['Alt'] : []);
+        return SEEK_ACTION_IDS.map(id => playerSettings.keybinds[id]).find(binding => {
+            if (!binding) return false;
+            const required = binding.split('+');
+            if (required.pop() !== key) return false;
+            return required.every(modifier => held.includes(modifier))
+                && held.every(modifier => required.includes(modifier) || allowed.includes(modifier));
+        });
     }
     // Fire the action bound to `binding`, if any. Returns true if one ran.
     function runBinding(binding, e) {
@@ -2030,29 +2039,15 @@
                 return false;
             }
             paneSizes = view.sizes;
-            await resyncFromCache();
-            viewSeekController?.abort();
-            viewSeekController = new AbortController();
-            if (view.positions) {
-                const cells = Array.from(document.getElementById('mv-grid').children);
-                cells.forEach(cell => {
-                    const id = cell.dataset.sceneId;
-                    const index = view.scenes.indexOf(id);
-                    const video = cell.querySelector('video');
-                    if (index < 0 || !video) return;
-                    const target = view.positions[index];
-                    const seek = () => {
-                        if (!cell.isConnected) return;
-                        const loop = getLoop(id);
-                        if (loop && (target < loop.a || target >= loop.b)) clearLoop(id);
-                        applyWheelSeek(id, video, target - effectivePlayhead(video, id));
-                    };
-                    if (video.readyState >= 1) seek();
-                    else video.addEventListener('loadedmetadata', seek, {
-                        once: true, signal: viewSeekController.signal
-                    });
-                });
-            }
+            favoritePositions = view.positions
+                ? new Map(view.scenes.map((id, index) => [id, view.positions[index]]))
+                : null;
+            try {
+                if (favoritePositions) {
+                    Array.from(document.getElementById('mv-grid').children).forEach(removeRenderedCell);
+                }
+                await resyncFromCache();
+            } finally { favoritePositions = null; }
             return true;
         } finally {
             rouletteBusy = false;
@@ -2651,10 +2646,17 @@
             const baseSrc = pickStream(id);
             // A looped scene opens at A instead of wherever it was left off:
             // inside a loop, "where I left off" has no meaning.
-            const cellLoop = isFilterBacked ? null : getLoop(id);
-            let resumeTime = cellLoop ? cellLoop.a : (isFilterBacked ? 0 : getResumeTime(id));
+            const favoriteTime = favoritePositions?.get(id);
+            let cellLoop = isFilterBacked ? null : getLoop(id);
+            if (favoriteTime !== undefined && cellLoop
+                    && (favoriteTime < cellLoop.a || favoriteTime >= cellLoop.b)) {
+                clearLoop(id);
+                cellLoop = null;
+            }
+            let resumeTime = favoriteTime ?? (cellLoop ? cellLoop.a : (isFilterBacked ? 0 : getResumeTime(id)));
             const dur = scenes[id]?.duration;
-            if (!cellLoop && resumeTime > 0 && dur && resumeTime > dur - PROGRESS_END_MARGIN) {
+            if (favoriteTime !== undefined && dur) resumeTime = Math.min(resumeTime, Math.max(0, dur - 0.5));
+            if (favoriteTime === undefined && !cellLoop && resumeTime > 0 && dur && resumeTime > dur - PROGRESS_END_MARGIN) {
                 // Stale/at-or-past-end offset (scene re-encoded shorter, or saved
                 // right at the end). Start fresh rather than ?start= past EOF.
                 resumeTime = 0;
@@ -3531,13 +3533,18 @@
             const tag = e.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
             const binding = normalizeKey(e.key);
+            const seekBinding = matchingSeekBinding(e);
+            if (seekBinding && (isFineSeek(e) || isAllCellsSeek(e))) {
+                runBinding(seekBinding, e);
+                return;
+            }
             const chord = keyboardBinding(e);
             if (chord !== binding && runBinding(chord, e)) return;
             // The one exception: a modifier the user has given a seek role,
             // pressed with a key bound to a seek action, is ours. runBinding
             // calls preventDefault, which is also what stops Alt+Left from
             // navigating back. Every other chord still belongs to the browser.
-            if ((e.ctrlKey || e.metaKey || e.altKey) && !isSeekChord(e, binding)) return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
             runBinding(binding, e);
         });
 
