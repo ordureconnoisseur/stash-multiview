@@ -27,6 +27,7 @@ const actions = [];
 let videos = [];
 let lateStarts = [];
 let unavailable;
+let transcodeId;
 let liveQueue = [];
 let writes = 0;
 const context = vm.createContext({
@@ -46,7 +47,7 @@ const context = vm.createContext({
     removeRenderedCell() {},
     getLoop: () => null,
     getResumeTime: () => 130,
-    pickStream: id => '/scene/' + id + '/stream',
+    pickStream: id => '/scene/' + id + (id === transcodeId ? '/stream.webm' : '/stream'),
     isTranscodeUrl: src => src.includes('.webm'),
     withStart: (src, time) => src + '?start=' + time,
     clearResumeTime() {},
@@ -120,6 +121,14 @@ vm.runInContext(`
     videos.forEach(video => video.dispatchEvent(new Event('loadedmetadata')));
     assert.deepEqual(videos.map(video => video.currentTime), [39, 70],
         'saved timestamps override remembered positions, including staggered cells');
+
+    transcodeId = '2';
+    await context.restoreView({ ...view, positions: [179.8, 179.9] });
+    lateStarts.forEach(start => start());
+    videos[0].dispatchEvent(new Event('loadedmetadata'));
+    assert.equal(videos[0].currentTime, 179.8, 'valid direct-play offset close to the end');
+    assert.equal(videos[1].src, '/scene/2/stream.webm?start=179.9', 'valid transcode offset close to the end');
+    transcodeId = undefined;
 
     await context.restoreView(legacy);
     lateStarts.forEach(start => start());

@@ -269,7 +269,7 @@
         const generation = queueGeneration;
         try {
             const q = await fetchConfigQueue();
-            if (pendingConfigWrites || generation !== queueGeneration) return false;
+            if (pendingConfigWrites || rouletteBusy || generation !== queueGeneration) return false;
             const next = JSON.stringify(q);
             if (next !== localStorage.getItem(STORAGE_KEY)) localStorage.setItem(STORAGE_KEY, next);
             return next !== resolvedRaw;
@@ -2333,6 +2333,11 @@
             button.textContent = label;
             button.addEventListener('click', async () => {
                 if (choosing) return;
+                if (!target.selectedOptions[0] || target.selectedOptions[0].disabled) {
+                    status.textContent = 'Choose a destination first.';
+                    target.focus();
+                    return;
+                }
                 choosing = true;
                 try {
                     await chooseScene(target.value, id);
@@ -2349,8 +2354,13 @@
             const options = queue.map((id, index) => new Option(
                 `Pane ${index + 1} · ${scenes[id]?.title || id}`, id));
             if (JSON.parse(resolvedRaw || '[]').length < 16) options.push(new Option('Add a pane', ''));
+            if (!options.some(option => option.value === preferred)) {
+                const unavailable = new Option('Destination changed. Choose again.', preferred);
+                unavailable.disabled = true;
+                options.unshift(unavailable);
+            }
             target.replaceChildren(...options);
-            if (options.some(option => option.value === preferred)) target.value = preferred;
+            target.value = preferred;
             playing.replaceChildren(...queue.map((id, index) =>
                 choice(id, `Pane ${index + 1} · ${scenes[id]?.title || id}`)));
             if (!queue.length) playing.textContent = 'The queue is empty.';
@@ -2432,14 +2442,14 @@
         rows.forEach(row => {
             row.naturalH = (containerWidth - gap * (row.end - row.start - 1)) / row.aspectSum;
         });
-        const totalNaturalH = rows.reduce((s, row) => s + row.naturalH, 0) + gap * (rows.length - 1);
-        const scale = containerHeight / totalNaturalH;
+        const totalNaturalH = rows.reduce((s, row) => s + row.naturalH, 0);
+        const scale = Math.max(0, containerHeight - gap * (rows.length - 1)) / totalNaturalH;
 
         const positions = [];
         let top = 0;
         for (let r = 0; r < rows.length; r++) {
             const row = rows[r];
-            const rowH = Math.round(row.naturalH * scale);
+            const rowH = row.naturalH * scale;
             if (r > 0) top += gap;
             let left = 0;
             for (let i = row.start; i < row.end; i++) {
@@ -2516,14 +2526,14 @@
         bands.forEach(band => {
             band.naturalH = (containerWidth - gap * (band.end - band.start - 1)) / band.aspectSum;
         });
-        const totalNaturalH = bands.reduce((s, band) => s + band.naturalH, 0) + gap * (bands.length - 1);
-        const scale = containerHeight / totalNaturalH;
+        const totalNaturalH = bands.reduce((s, band) => s + band.naturalH, 0);
+        const scale = Math.max(0, containerHeight - gap * (bands.length - 1)) / totalNaturalH;
 
         const positions = new Array(n);
         let top = 0;
         for (let r = 0; r < bands.length; r++) {
             const band = bands[r];
-            const bandH = Math.round(band.naturalH * scale);
+            const bandH = band.naturalH * scale;
             if (r > 0) top += gap;
             let left = 0;
             for (let si = band.start; si < band.end; si++) {
@@ -2532,7 +2542,7 @@
                     ? containerWidth - Math.round(left)
                     : Math.round(slot.aspect * band.naturalH);
                 const x = Math.round(left);
-                const halfH = Math.round((bandH - gap) / 2);
+                const halfH = Math.max(0, (bandH - gap) / 2);
                 for (const item of slot.items) {
                     if (item.pos === 'top') {
                         positions[item.idx] = { left: x, top, width: w, height: halfH };
@@ -2573,6 +2583,7 @@
         const positions = (hasPortrait && hasLandscape)
             ? computeBandedLayout(aspectRatios, containerWidth, containerHeight, GAP)
             : computeJustifiedLayout(aspectRatios, containerWidth, containerHeight, GAP);
+        const toolbarHeight = document.getElementById('mv-topbar').offsetHeight;
         cells.forEach((cell, i) => {
             const p = positions[i];
             if (!p) return;
@@ -2580,6 +2591,7 @@
             cell.style.top    = p.top    + 'px';
             cell.style.width  = p.width  + 'px';
             cell.style.height = p.height + 'px';
+            cell.style.setProperty('--mv-toolbar-overlap', Math.max(0, toolbarHeight - p.top) + 'px');
         });
     }
 
@@ -2871,7 +2883,7 @@
             }
             let resumeTime = favoriteTime ?? (cellLoop ? cellLoop.a : (isFilterBacked ? 0 : getResumeTime(id)));
             const dur = scenes[id]?.duration;
-            if (favoriteTime !== undefined && dur) resumeTime = Math.min(resumeTime, Math.max(0, dur - 0.5));
+            if (favoriteTime !== undefined && dur && resumeTime >= dur) resumeTime = Math.max(0, dur - 0.5);
             if (favoriteTime === undefined && !cellLoop && resumeTime > 0 && dur && resumeTime > dur - PROGRESS_END_MARGIN) {
                 // Stale/at-or-past-end offset (scene re-encoded shorter, or saved
                 // right at the end). Start fresh rather than ?start= past EOF.

@@ -1232,7 +1232,8 @@ body:is(.mv-focus, .mv-smart) #mv-grid { display: block; padding: 0; }
 body:is(.mv-focus, .mv-smart) .mv-cell {
     position: absolute;
 }
-body.mv-focus .mv-cell video {
+body.mv-focus .mv-pane-bar { inset-block-start: calc(4px + var(--mv-toolbar-overlap, 0px)); }
+body.mv-focus:not(.mv-smart) .mv-cell video {
     object-fit: cover;
 }
 body.mv-focus .mv-seekbar {
