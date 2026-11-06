@@ -158,12 +158,13 @@ html, body {
 }
 #mv-topbar #mv-title { white-space: nowrap; min-width: max-content; }
 
+#mv-queue { --mv-dialog-width: 570px; }
 #mv-views, #mv-queue {
     background: var(--mv-chrome-bg);
     color: var(--mv-text);
     border: 1px solid var(--mv-border);
     border-radius: 12px;
-    width: min(470px, calc(100vw - 24px));
+    width: min(var(--mv-dialog-width, 470px), calc(100vw - 24px));
     max-height: calc(100dvh - 64px);
     padding: 20px;
     margin: 52px 12px auto auto;
@@ -210,6 +211,16 @@ html, body {
 .mv-choice-list { display: grid; gap: 4px; max-height: 24vh; overflow: auto; list-style: none; font-size: 13px; }
 .mv-choice-list:not(:empty) { margin: 6px 0 12px; }
 .mv-choice-list button { width: 100%; text-align: left; }
+#mv-queue a { color: var(--mv-text); font-size: 13px; }
+#mv-search-results { max-height: 35vh; }
+#mv-search-results button { display: flex; align-items: center; gap: 8px; }
+#mv-search-results img {
+    width: 64px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+#mv-library-pages { margin-bottom: 12px; }
 #mv-pane-sizes fieldset { margin-bottom: 8px; border: 1px solid var(--mv-border); }
 #mv-pane-sizes label { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; }
 #mv-pane-sizes input { width: 65px; }

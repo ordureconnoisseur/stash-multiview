@@ -2517,14 +2517,27 @@
         const playing = document.getElementById('mv-queued-scenes');
         const results = document.getElementById('mv-search-results');
         const status = document.getElementById('mv-queue-status');
+        const pages = document.getElementById('mv-library-pages');
+        const previous = document.getElementById('mv-library-prev');
+        const next = document.getElementById('mv-library-next');
+        const pageSize = 24;
         let search;
+        let query = '';
+        let page = 1;
         let choosing = false;
 
-        function choice(id, label, swapOnly = false) {
+        function choice(id, label, swapOnly = false, screenshot) {
             const item = document.createElement('li');
             const button = document.createElement('button');
             button.type = 'button';
             button.textContent = label;
+            if (screenshot) {
+                const image = document.createElement('img');
+                image.alt = '';
+                image.loading = 'lazy';
+                image.src = screenshot;
+                button.prepend(image);
+            }
             button.addEventListener('click', async () => {
                 if (choosing) return;
                 if (!target.selectedOptions[0] || target.selectedOptions[0].disabled) {
@@ -2571,8 +2584,10 @@
         function open(id) {
             closeMenuPanel();
             refresh(id ?? queue[0] ?? '');
-            status.textContent = '';
-            if (!dialog.open) dialog.showModal();
+            if (!dialog.open) {
+                dialog.showModal();
+                return browseLibrary('', 1);
+            }
         }
 
         document.getElementById('mv-queue-btn').addEventListener('click', () => open());
@@ -2586,35 +2601,52 @@
             form.reset();
             results.replaceChildren();
         });
-        form.addEventListener('submit', async event => {
+        form.addEventListener('submit', event => {
             event.preventDefault();
-            const q = form.elements.query.value.trim();
-            if (!q) return;
+            browseLibrary(form.elements.query.value.trim(), 1);
+        });
+        previous.addEventListener('click', () => browseLibrary(query, page - 1));
+        next.addEventListener('click', () => browseLibrary(query, page + 1));
+
+        async function browseLibrary(q, requestedPage) {
             search?.abort();
             const request = new AbortController();
             search = request;
             results.replaceChildren();
-            status.textContent = 'Searching…';
+            status.textContent = 'Loading library…';
+            previous.disabled = next.disabled = true;
             try {
                 const response = await fetch('/graphql', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     signal: request.signal,
                     body: JSON.stringify({
-                        query: 'query SearchScenes($filter: FindFilterType) { findScenes(filter: $filter) { scenes { id title } } }',
-                        variables: { filter: { q, per_page: 24 } }
+                        query: 'query BrowseScenes($filter: FindFilterType) { findScenes(filter: $filter) { count scenes { id title paths { screenshot } } } }',
+                        variables: { filter: { q: q || undefined, page: requestedPage, per_page: pageSize, sort: 'title' } }
                     })
                 });
                 const data = await response.json();
-                const matches = data?.data?.findScenes?.scenes;
-                if (!response.ok || data.errors?.length || !Array.isArray(matches)) throw new Error();
+                const { scenes: matches, count } = data?.data?.findScenes || {};
+                if (!response.ok || data.errors?.length || !Array.isArray(matches) || !Number.isInteger(count)) throw new Error();
                 if (request.signal.aborted) return;
-                results.replaceChildren(...matches.map(scene => choice(String(scene.id), scene.title || `Scene ${scene.id}`)));
-                status.textContent = matches.length ? '' : 'No scenes found.';
+                query = q;
+                page = requestedPage;
+                results.replaceChildren(...matches.map(scene =>
+                    choice(String(scene.id), scene.title || `Scene ${scene.id}`, false, scene.paths?.screenshot)));
+                results.scrollTop = 0;
+                status.textContent = matches.length
+                    ? `${(page - 1) * pageSize + 1}–${(page - 1) * pageSize + matches.length} of ${count} scenes`
+                    : 'No scenes found.';
+                previous.disabled = page <= 1;
+                next.disabled = page * pageSize >= count;
+                pages.hidden = previous.disabled && next.disabled;
             } catch {
-                if (!request.signal.aborted) status.textContent = 'Could not search Stash. Try again.';
+                if (request.signal.aborted) return;
+                status.textContent = 'Could not load the library. Try again.';
+                pages.hidden = true;
+                results.replaceChildren();
             }
-        });
+        }
     }
 
     function computeJustifiedLayout(aspectRatios, containerWidth, containerHeight, gap) {

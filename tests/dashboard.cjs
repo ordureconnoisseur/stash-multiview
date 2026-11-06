@@ -29,9 +29,19 @@ class Element {
         return elements.get(id);
     };
     const changes = [];
+    const libraryPages = [];
     const context = vm.createContext({
         document: { getElementById: get, createElement: () => new Element() },
         Option: class { constructor(label, value) { this.label = label; this.value = value; this.dataset = {}; } },
+        AbortController,
+        fetch: async (_, options) => {
+            const { page, per_page } = JSON.parse(options.body).variables.filter;
+            libraryPages.push(page);
+            const offset = (page - 1) * per_page;
+            const scenes = Array.from({ length: Math.min(per_page, 26 - offset) }, (_, i) =>
+                ({ id: String(offset + i + 1), title: `Library scene ${offset + i + 1}` }));
+            return { ok: true, json: async () => ({ data: { findScenes: { count: 26, scenes } } }) };
+        },
         closeMenuPanel() {},
         chooseScene: async (target, id, swapOnly) => { changes.push([target, id, swapOnly]); }
     });
@@ -42,7 +52,14 @@ class Element {
         ${picker}
         setupQueuePicker();
     `, context);
-    get('mv-queue-btn').events.click();
+    await get('mv-queue-btn').events.click();
+    const results = get('mv-search-results');
+    assert.deepEqual(libraryPages, [1], 'the picker browses the library when opened');
+    assert.equal(results.children.length, 24);
+    await get('mv-library-next').events.click();
+    assert.deepEqual(libraryPages, [1, 2]);
+    assert.equal(results.children.length, 2);
+    assert.equal(get('mv-library-next').disabled, true);
     const target = get('mv-queue-target');
     assert.equal(target.value, '1');
 

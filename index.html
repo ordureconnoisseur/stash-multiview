@@ -23,7 +23,7 @@
             } catch (e) { /* localStorage may be disabled — fall through */ }
         })();
     </script>
-    <link rel="stylesheet" href="multiView-player.css?v=layout-reset1">
+    <link rel="stylesheet" href="multiView-player.css?v=library1">
     <script>
         /* Optional theme stylesheet — host theme can write a URL pointing
            at its own multiview-player overlay CSS. We append the link
@@ -76,7 +76,7 @@
             title="Undo last roll (Shift+R)" aria-keyshortcuts="Shift+R" disabled>↶ Undo</button>
     <button id="mv-roulette-btn" class="mv-topbar-icon-btn mv-text-btn" type="button" title="Roll options">Roll</button>
 
-    <button id="mv-queue-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Queue</button>
+    <button id="mv-queue-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Queue &amp; Library</button>
     <button id="mv-smart-btn" class="mv-topbar-icon-btn mv-text-btn" type="button" aria-pressed="false">Smart layout</button>
     <button id="mv-reset-layout-btn" class="mv-topbar-icon-btn mv-text-btn" type="button" disabled>Reset layout</button>
     <button id="mv-save-view-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Save view</button>
@@ -118,15 +118,21 @@
     <form method="dialog"><button class="mv-views-close">Close</button></form>
     <h2 id="mv-queue-title">Choose a video</h2>
     <label>Destination <select id="mv-queue-target"></select></label>
-    <p>Choose a queued video to swap panes, or find a different video in Stash.</p>
-    <h3>Playing now</h3>
-    <ul id="mv-queued-scenes" class="mv-choice-list"></ul>
+    <h3>Stash library</h3>
+    <a href="/scenes" target="_blank" rel="noopener">Open Stash library</a>
     <form id="mv-search-scenes">
-        <label>Search library <input type="search" name="query" required></label>
+        <label>Search library <input type="search" name="query"></label>
         <button type="submit">Search</button>
     </form>
     <p id="mv-queue-status" role="status"></p>
     <ul id="mv-search-results" class="mv-choice-list"></ul>
+    <div id="mv-library-pages" hidden>
+        <button id="mv-library-prev" type="button">Previous page</button>
+        <button id="mv-library-next" type="button">Next page</button>
+    </div>
+    <h3>Playing now</h3>
+    <p>Choose a playing video to swap it with the destination pane.</p>
+    <ul id="mv-queued-scenes" class="mv-choice-list"></ul>
 </dialog>
 
 <div id="mv-empty" style="display:none">
@@ -139,6 +145,6 @@
     <p>Nothing queued. Use <strong>Queue</strong> to search your library, or <strong>Roll</strong> to play random videos.</p>
 </div>
 
-<script src="multiView-player.js?v=layout-reset1"></script>
+<script src="multiView-player.js?v=library1"></script>
 </body>
 </html>
