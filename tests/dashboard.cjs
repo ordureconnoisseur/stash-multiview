@@ -30,6 +30,7 @@ class Element {
     };
     const changes = [];
     const libraryPages = [];
+    let failNextPage = true;
     const context = vm.createContext({
         document: { getElementById: get, createElement: () => new Element() },
         Option: class { constructor(label, value) { this.label = label; this.value = value; this.dataset = {}; } },
@@ -37,6 +38,10 @@ class Element {
         fetch: async (_, options) => {
             const { page, per_page } = JSON.parse(options.body).variables.filter;
             libraryPages.push(page);
+            if (page === 2 && failNextPage) {
+                failNextPage = false;
+                return { ok: false, json: async () => ({ errors: [{}] }) };
+            }
             const offset = (page - 1) * per_page;
             const scenes = Array.from({ length: Math.min(per_page, 26 - offset) }, (_, i) =>
                 ({ id: String(offset + i + 1), title: `Library scene ${offset + i + 1}` }));
@@ -57,7 +62,10 @@ class Element {
     assert.deepEqual(libraryPages, [1], 'the picker browses the library when opened');
     assert.equal(results.children.length, 24);
     await get('mv-library-next').events.click();
-    assert.deepEqual(libraryPages, [1, 2]);
+    assert.equal(results.children.length, 24, 'a failed page request keeps the previous results');
+    assert.equal(get('mv-library-next').disabled, false, 'the failed page remains reachable');
+    await get('mv-library-next').events.click();
+    assert.deepEqual(libraryPages, [1, 2, 2]);
     assert.equal(results.children.length, 2);
     assert.equal(get('mv-library-next').disabled, true);
     const target = get('mv-queue-target');
@@ -182,7 +190,9 @@ const advance = source.slice(source.indexOf('    async function advanceFilterCel
         [{ errors: [{ message: 'Stash unavailable' }] }, true, '2', 'Could not load next'],
         [{ data: { findScenes: { scenes: [{ id: '1' }, { id: '2' }] } } }, true, '2', 'No other match'],
         [{ data: { findScenes: { scenes: [{ id: '3' }] } } }, false, '2', 'Could not load next'],
-        [{ data: { findScenes: { scenes: [{ id: '3' }] } } }, true, '3', 'Loading next video']
+        [{ data: { findScenes: { scenes: [{ id: '3' }] } } }, true, '3', 'Loading next video'],
+        [{ data: { findScenes: { scenes: ['1', '2', '3', '4'].map(id => ({ id })) } } },
+            id => id !== '3', '4', 'Loading next video']
     ]) {
         const status = { textContent: 'Auto-next' };
         const video = {};
@@ -191,11 +201,16 @@ const advance = source.slice(source.indexOf('    async function advanceFilterCel
         let renders = 0;
         const context = vm.createContext({
             buildSceneFilter() {},
-            fetch: async () => {
+            fetch: async (_, options) => {
                 lookups++;
-                return { ok: true, json: async () => response };
+                const { per_page } = JSON.parse(options.body).variables.filter;
+                const results = response.data?.findScenes.scenes;
+                const json = results
+                    ? { data: { findScenes: { scenes: results.slice(0, per_page) } } }
+                    : response;
+                return { ok: true, json: async () => json };
             },
-            fetchSceneMeta: async () => playable,
+            fetchSceneMeta: async id => typeof playable === 'function' ? playable(id) : playable,
             render: () => { renders++; },
             seekToStart: () => { replays++; },
             document: { querySelector: () => ({ querySelector: selector => selector === 'video' ? video : status }) }
@@ -218,7 +233,7 @@ const advance = source.slice(source.indexOf('    async function advanceFilterCel
         assert.equal(status.textContent, statusText);
         assert.equal(vm.runInContext("queue.join(',')", context), '1,' + expected);
         assert.equal(replays, expected === '2' ? 1 : 0);
-        assert.equal(renders, expected === '3' ? 1 : 0);
+        assert.equal(renders, expected === '2' ? 0 : 1);
     }
     console.log('Auto-next replaces only its own pane and distinguishes missing matches from errors');
 })().catch(error => { console.error(error); process.exitCode = 1; });

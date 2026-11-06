@@ -633,7 +633,8 @@
         try {
             const excluded = new Set(queue);
             if (!manual && undoSceneId) excluded.add(undoSceneId);
-            const candidates = await findFilterScenes(filterItem, excluded.size + 1);
+            // Leave room for missing files and candidates taken by other advancing panes.
+            const candidates = await findFilterScenes(filterItem, excluded.size + 16);
             if (!stillCurrent() || waitForQueue()) return;
             let unavailable = candidates === null;
             for (const candidate of candidates || []) {
@@ -2542,6 +2543,7 @@
         let search;
         let query = '';
         let page = 1;
+        let count = 0;
         let choosing = false;
 
         function choice(id, label, swapOnly = false, screenshot) {
@@ -2618,6 +2620,9 @@
             search?.abort();
             form.reset();
             results.replaceChildren();
+            page = 1;
+            count = 0;
+            pages.hidden = true;
         });
         form.addEventListener('submit', event => {
             event.preventDefault();
@@ -2630,7 +2635,7 @@
             search?.abort();
             const request = new AbortController();
             search = request;
-            results.replaceChildren();
+            results.inert = true;
             status.textContent = 'Loading library…';
             previous.disabled = next.disabled = true;
             try {
@@ -2644,25 +2649,31 @@
                     })
                 });
                 const data = await response.json();
-                const { scenes: matches, count } = data?.data?.findScenes || {};
-                if (!response.ok || data.errors?.length || !Array.isArray(matches) || !Number.isInteger(count)) throw new Error();
+                const { scenes: matches, count: total } = data?.data?.findScenes || {};
+                if (!response.ok || data.errors?.length || !Array.isArray(matches) || !Number.isInteger(total)) throw new Error();
                 if (request.signal.aborted) return;
                 query = q;
                 page = requestedPage;
+                count = total;
                 results.replaceChildren(...matches.map(scene =>
                     choice(String(scene.id), scene.title || `Scene ${scene.id}`, false, scene.paths?.screenshot)));
                 results.scrollTop = 0;
                 status.textContent = matches.length
                     ? `${(page - 1) * pageSize + 1}–${(page - 1) * pageSize + matches.length} of ${count} scenes`
                     : 'No scenes found.';
-                previous.disabled = page <= 1;
-                next.disabled = page * pageSize >= count;
-                pages.hidden = previous.disabled && next.disabled;
             } catch {
-                if (request.signal.aborted) return;
-                status.textContent = 'Could not load the library. Try again.';
-                pages.hidden = true;
-                results.replaceChildren();
+                if (!request.signal.aborted) {
+                    status.textContent = results.childElementCount
+                        ? 'Could not load the library. Showing previous results.'
+                        : 'Could not load the library. Try again.';
+                }
+            } finally {
+                if (!request.signal.aborted) {
+                    results.inert = false;
+                    previous.disabled = page <= 1;
+                    next.disabled = page * pageSize >= count;
+                    pages.hidden = previous.disabled && next.disabled;
+                }
             }
         }
     }
