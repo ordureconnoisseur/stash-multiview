@@ -845,7 +845,18 @@
         { id: 'focus',          label: 'Toggle Focus Mode',       run: () => toggleFocusMode() },
         { id: 'fullscreen',     label: 'Toggle Full Screen',      run: () => toggleFullscreen() },
         { id: 'roulette',       label: 'Open Roulette',           run: () => openMenuPanel() },
-        { id: 'reroll',         label: 'Reroll one pane',         run: e => rerollPane(e) },
+        { id: 'reroll',         label: 'Next video (one Random pane)',         run: e => rerollPane(e) },
+        { id: 'previousPane', label: 'Previous single-video roll', run: e => {
+            if (!e.repeat && undoSceneId) undoLastRoll();
+        } },
+        { id: 'rollBoth', label: 'Roll both videos', run: e => {
+            if (!e.repeat) loadRoulette(2, 'replace');
+        } },
+        { id: 'previousBoth', label: 'Previous pair', run: e => {
+            if (!e.repeat && !undoSceneId) undoLastRoll();
+        } },
+        { id: 'volumeUp', label: 'Volume up (hovered, otherwise all)', run: e => adjustVolume(e, 0.05) },
+        { id: 'volumeDown', label: 'Volume down (hovered, otherwise all)', run: e => adjustVolume(e, -0.05) },
         { id: 'roll', label: 'Roll using menu settings', run: e => {
             if (e.repeat) return;
             if (!document.getElementById('mv-menu-panel')) openMenuPanel();
@@ -873,7 +884,7 @@
         { id: 'settings', label: 'Open player settings', run: () => openSettingsModal() },
         { id: 'shortcuts', label: 'Edit keybinds', run: () => openSettingsModal('Shortcuts') },
     ];
-    const DEFAULT_KEYBINDS = { playPauseHover: '', muteHover: 'Mouse1', oHover: '', loopSetA: 'a', loopSetB: 'b', loopClear: 'l', seekBack: 'ArrowLeft', seekForward: 'ArrowRight', focus: 'f', fullscreen: '', roulette: '', reroll: 'r', undoRoll: 'Shift+r' };
+    const DEFAULT_KEYBINDS = { playPauseHover: '', muteHover: 'Mouse1', oHover: '', loopSetA: 'a', loopSetB: 'b', loopClear: 'l', seekBack: 'ArrowLeft', seekForward: 'ArrowRight', focus: 'f', fullscreen: '', roulette: '', reroll: 'n', previousPane: 'Shift+n', rollBoth: 'r', previousBoth: 'Shift+r', undoRoll: '', volumeUp: '.', volumeDown: ',' };
     // Targets where a non-left button keeps its native meaning, so a mouse
     // shortcut must NOT fire over them: links (middle-click opens a new tab) and
     // the settings/menu/volume panels (which contain their own controls). NOTE:
@@ -900,6 +911,17 @@
         const id = isRandomScene(hovered) ? hovered : queue.find(isRandomScene);
         if (id) return advanceFilterCell(id, true);
         if (queue.length < 2) return loadRoulette(2, 'fill');
+    }
+
+    function adjustVolume(e, delta) {
+        const hovered = hoveredCell(e);
+        const cells = hovered ? [hovered] : Array.from(document.querySelectorAll('.mv-cell'));
+        cells.forEach(cell => {
+            const slider = cell.querySelector('.mv-vol-slider');
+            if (!slider) return;
+            slider.value = String(Math.max(0, Math.min(2, Math.round((Number(slider.value) + delta) * 100) / 100)));
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+        });
     }
 
     function muteHoveredCell(e) {
@@ -1009,13 +1031,19 @@
             if (id in saved) continue;
             if (merged[id] && taken.has(merged[id])) merged[id] = '';
         }
-        if (!('undoRoll' in saved) && seekModifiers.includes('shift')
-                && SEEK_ACTION_IDS.some(id => saved[id] === 'r')) merged.undoRoll = '';
+        if (!('previousBoth' in saved) && seekModifiers.includes('shift')
+                && SEEK_ACTION_IDS.some(id => saved[id] === 'r')) merged.previousBoth = '';
         return merged;
     }
 
     function loadPlayerSettings(saved = {}) {
+        const keybinds = { ...(saved.keybinds || {}) };
+        if (saved.navigationKeybindVersion !== 1) {
+            if (keybinds.reroll === 'r') delete keybinds.reroll;
+            if (keybinds.undoRoll === 'Shift+r') delete keybinds.undoRoll;
+        }
         return {
+            navigationKeybindVersion: 1,
             directPlay: saved.directPlay ?? false,
             quality: { ...DEFAULT_QUALITY, ...(saved.quality || {}) },
             focusMode: saved.focusMode ?? false,
@@ -1031,7 +1059,7 @@
             fineModifier: pickModifier(saved.fineModifier, 'shift'),
             // Alt rather than Ctrl by default; Ctrl+wheel is browser zoom.
             allCellsModifier: pickModifier(saved.allCellsModifier, 'alt'),
-            keybinds: mergeKeybinds(saved.keybinds || {}, [saved.fineModifier ?? 'shift', saved.allCellsModifier ?? 'alt'])
+            keybinds: mergeKeybinds(keybinds, [saved.fineModifier ?? 'shift', saved.allCellsModifier ?? 'alt'])
         };
     }
 
@@ -3262,7 +3290,7 @@
     function refreshUndoButton() {
         const button = document.getElementById('mv-undo-roll-btn');
         button.disabled = rouletteBusy || !undoRoll;
-        const binding = playerSettings.keybinds.undoRoll;
+        const binding = playerSettings.keybinds.undoRoll || playerSettings.keybinds[undoSceneId ? 'previousPane' : 'previousBoth'];
         button.title = 'Undo last roll' + (binding ? ' (' + keyLabel(binding) + ')' : '');
         button.ariaKeyShortcuts = binding || '';
     }
@@ -3292,7 +3320,7 @@
     // mode 'replace' (default): the roll overwrites the whole grid with `count`
     // random scenes. mode 'add': append up to `count` random scenes to the
     // current grid (filter cards and all), capped at 16 and skipping scenes
-    // already on screen. The R shortcut uses fill to reach two visible panes.
+    // already on screen. The single-pane shortcut uses fill to reach two visible panes.
     async function loadRoulette(count, mode = 'replace') {
         if (rouletteBusy) return;
         rouletteBusy = true;
