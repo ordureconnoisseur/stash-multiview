@@ -2223,7 +2223,8 @@
             const manualSizes = view.sizes.some(size => size?.some(value => value !== null));
             if (view.smartLayout !== undefined || manualSizes) {
                 playerSettings.smartLayout = view.smartLayout ?? false;
-                savePlayerSettings();
+                try { savePlayerSettings(); }
+                catch { /* Apply the committed view even if settings cannot be saved. */ }
                 applyFocusMode(playerSettings.focusMode);
             }
             favoritePositions = view.positions
@@ -2272,7 +2273,7 @@
         const reset = document.getElementById('mv-reset-sizes');
         const suggest = document.getElementById('mv-suggest-view-name');
         const nameInput = form.elements.name;
-        let lastSuggestion = '';
+        let nameEdited = false;
         const grid = document.getElementById('mv-grid');
         const visibleScenes = () => Array.from(grid.children, cell => cell.dataset.sceneId);
 
@@ -2354,16 +2355,15 @@
         }));
 
         function fillSuggestedName() {
-            lastSuggestion = suggestViewName(visibleScenes(), readViews().map(view => view.name), nameInput.maxLength);
-            nameInput.value = lastSuggestion;
+            nameInput.value = suggestViewName(visibleScenes(), readViews().map(view => view.name), nameInput.maxLength);
+            nameEdited = false;
         }
 
         function refreshSuggestedName() {
-            if (visibleScenes().length && (!nameInput.value.trim() || nameInput.value === lastSuggestion)) {
-                fillSuggestedName();
-            }
+            if (!nameEdited && visibleScenes().length) fillSuggestedName();
         }
 
+        nameInput.addEventListener('input', () => { nameEdited = true; });
         suggest.addEventListener('click', fillSuggestedName);
 
         function openViewDialog(save) {
@@ -2405,6 +2405,7 @@
             }
             if (!storeViews([...views, captureView(name)])) return;
             form.reset();
+            nameEdited = false;
             refresh(name);
             status.textContent = 'Favorite saved.';
         });

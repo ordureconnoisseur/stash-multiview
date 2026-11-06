@@ -33,6 +33,8 @@ let transcodeId;
 let liveQueue = [];
 let writes = 0;
 let restoredSplit;
+let rejectSettingsWrite = false;
+let renders = 0;
 const context = vm.createContext({
     console,
     recordAction: id => actions.push(id),
@@ -56,7 +58,9 @@ const context = vm.createContext({
         return result;
     },
     refreshUndoButton() {},
-    savePlayerSettings() {},
+    savePlayerSettings() {
+        if (rejectSettingsWrite) throw new Error('Storage quota exceeded');
+    },
     applyFocusMode() {},
     isPairSplit: value => Number.isInteger(value) && value >= 20 && value <= 80,
     storePairSplit: (_scenes, split) => { restoredSplit = split; },
@@ -70,6 +74,7 @@ const context = vm.createContext({
     withStart: (src, time) => src + '?start=' + time,
     clearResumeTime() {},
     resyncFromCache: async () => {
+        renders++;
         videos = ['1', '2'].map(id => {
             const video = new EventTarget();
             video.currentTime = 0;
@@ -169,7 +174,11 @@ vm.runInContext(`
     assert.equal(restoredSplit, null, 'a legacy Favorite uses its saved pane sizes');
     context.playerSettings.smartLayout = true;
     const manual = { ...legacy, sizes: [[35, 100], [65, 100]] };
-    await context.restoreView(manual);
+    const previousRenders = renders;
+    rejectSettingsWrite = true;
+    assert.equal(await context.restoreView(manual), true);
+    rejectSettingsWrite = false;
+    assert.equal(renders, previousRenders + 1, 'a settings write failure does not prevent rendering the committed view');
     assert.equal(context.playerSettings.smartLayout, false, 'legacy manual sizes take precedence over Smart');
     await context.restoreView({ ...manual, smartLayout: true });
     assert.equal(context.playerSettings.smartLayout, true, 'explicit Smart setting is preserved');
