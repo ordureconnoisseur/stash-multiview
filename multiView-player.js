@@ -1089,8 +1089,8 @@
         document.getElementById('mv-focus-btn')?.classList.toggle('active', enabled);
         const smart = document.getElementById('mv-smart-btn');
         smart?.setAttribute('aria-pressed', String(playerSettings.smartLayout));
-        if (!enabled && !playerSettings.smartLayout) clearJustifiedLayout();
-        detectAndApplyOrientation();
+        if (playerSettings.smartLayout) applyJustifiedLayout();
+        else clearJustifiedLayout();
     }
 
     function toggleSmartLayout() {
@@ -2002,35 +2002,14 @@
 
     // �"?�"? Layout �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
-    function autoLayout(count, isPortrait = false) {
+    function autoLayout(count) {
         if (count <= 1) return '1x1';
         if (count <= 2) return '2x1';
-        if (isPortrait && count === 3) return '3x1';
         if (count <= 4) return '2x2';
         if (count <= 6) return '3x2';
         if (count <= 9) return '3x3';
         if (count <= 12) return '3x4';
         return '4x4';
-    }
-
-    function detectAndApplyOrientation() {
-        if (playerSettings.focusMode || playerSettings.smartLayout) {
-            applyJustifiedLayout();
-            return;
-        }
-        const videos = [...document.querySelectorAll('.mv-cell video')];
-        const loaded = videos.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
-        if (!loaded.length) return;
-
-        const portraitCount = loaded.filter(v => v.videoHeight > v.videoWidth).length;
-        const isPortrait = portraitCount > loaded.length / 2;
-
-        const grid = document.getElementById('mv-grid');
-        const expectedLayout = autoLayout(queue.length, isPortrait);
-        const changed = grid.className !== 'layout-' + expectedLayout;
-        if (changed) grid.className = 'layout-' + expectedLayout;
-        applyPaneSizes();
-        if (changed) grid.dispatchEvent(new Event('mv-wall-rendered'));
     }
 
     function defaultPaneSize(grid) {
@@ -2274,6 +2253,7 @@
         const source = queue.indexOf(id);
         if (targetId && target < 0) throw new Error('That pane changed. Choose a destination again.');
         if (swapOnly && source < 0) throw new Error('That video changed. Choose another video to swap.');
+        if (!swapOnly && source >= 0) throw new Error('This video is already playing. Use Playing now to swap it.');
         if (target === source && source >= 0) return;
         if (target < 0 && source >= 0) throw new Error('This video is already playing. Choose a pane to swap.');
         rouletteBusy = true;
@@ -2351,14 +2331,22 @@
             return item;
         }
 
-        function refresh(preferred = target.value) {
-            const options = queue.map((id, index) => new Option(
-                `Pane ${index + 1} · ${scenes[id]?.title || id}`, id));
+        function refresh(preferred) {
+            const selected = preferred === undefined ? target.selectedOptions[0] : null;
+            preferred ??= selected?.value;
+            const options = queue.map((id, index) => {
+                const option = new Option(`Pane ${index + 1} · ${scenes[id]?.title || id}`, id);
+                option.dataset.paneIndex = String(index);
+                return option;
+            });
             if (JSON.parse(resolvedRaw || '[]').length < 16) options.push(new Option('Add a pane', ''));
-            if (!options.some(option => option.value === preferred)) {
-                const unavailable = new Option('Destination changed. Choose again.', preferred);
+            const stillSelected = options.some(option => option.value === preferred
+                && (!selected || option.dataset.paneIndex === selected.dataset.paneIndex));
+            if (!stillSelected) {
+                const unavailable = new Option('Destination changed. Choose again.', 'unavailable');
                 unavailable.disabled = true;
                 options.unshift(unavailable);
+                preferred = unavailable.value;
             }
             target.replaceChildren(...options);
             target.value = preferred;
@@ -2561,7 +2549,7 @@
     }
 
     function applyJustifiedLayout() {
-        if (!playerSettings.focusMode && !playerSettings.smartLayout) return;
+        if (!playerSettings.smartLayout) return;
         const grid = document.getElementById('mv-grid');
         if (!grid) return;
         const cells = [...grid.querySelectorAll('.mv-cell')];
@@ -2609,6 +2597,7 @@
     function clearJustifiedLayout() {
         document.querySelectorAll('.mv-cell').forEach(cell => {
             cell.style.left = cell.style.top = cell.style.width = cell.style.height = '';
+            cell.style.removeProperty('--mv-toolbar-overlap');
         });
     }
 
@@ -3032,7 +3021,7 @@
 
             video.addEventListener('loadedmetadata', () => {
                 connectAudio(id, video);
-                detectAndApplyOrientation();
+                applyJustifiedLayout();
             }, { once: true });
 
             setupPlayTracking(id, video);
@@ -3042,14 +3031,14 @@
             loadingDiv.innerHTML = '<div class="mv-spinner"></div>';
             video.addEventListener('canplay', () => {
                 loadingDiv.remove();
-                detectAndApplyOrientation();
+                applyJustifiedLayout();
             }, { once: true });
 
             // Final fallback: videoWidth/videoHeight are guaranteed non-zero during playback
             const checkDims = () => {
                 if (video.videoWidth > 0) {
                     video.removeEventListener('timeupdate', checkDims);
-                    detectAndApplyOrientation();
+                    applyJustifiedLayout();
                 }
             };
             video.addEventListener('timeupdate', checkDims);
@@ -3431,7 +3420,7 @@
                 grid.insertBefore(cell, grid.children[index] || null);
             }
         });
-        detectAndApplyOrientation();
+        applyJustifiedLayout();
         applyPaneSizes();
         grid.dispatchEvent(new Event('mv-wall-rendered'));
     }
@@ -3815,7 +3804,7 @@
             if (rightBound) e.preventDefault();
         });
         window.addEventListener('resize', () => {
-            if (playerSettings.focusMode || playerSettings.smartLayout) applyJustifiedLayout();
+            applyJustifiedLayout();
         });
 
         document.addEventListener('mousemove', e => { updateSeekFill(e); updateLoopDrag(e); queueSeekZone(e); });

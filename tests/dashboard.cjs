@@ -10,7 +10,7 @@ const picker = source.slice(source.indexOf('    function setupQueuePicker()'),
 
 class Element {
     constructor() { this.events = {}; }
-    get selectedOptions() { return this.children.filter(child => child.value === this.value); }
+    get selectedOptions() { return (this.children || []).filter(child => child.value === this.value); }
     addEventListener(name, handler) { this.events[name] = handler; }
     append(child) { this.children = [child]; }
     replaceChildren(...children) {
@@ -31,7 +31,7 @@ class Element {
     const changes = [];
     const context = vm.createContext({
         document: { getElementById: get, createElement: () => new Element() },
-        Option: class { constructor(label, value) { this.label = label; this.value = value; } },
+        Option: class { constructor(label, value) { this.label = label; this.value = value; this.dataset = {}; } },
         closeMenuPanel() {},
         chooseScene: async (target, id, swapOnly) => { changes.push([target, id, swapOnly]); }
     });
@@ -48,9 +48,12 @@ class Element {
 
     vm.runInContext("queue = ['2', '3']; resolvedRaw = JSON.stringify(queue);", context);
     get('mv-grid').events['mv-wall-rendered']();
-    assert.equal(target.value, '1');
     assert.equal(target.selectedOptions[0].disabled, true);
-    const choice = get('mv-queued-scenes').children[1].children[0];
+    target.value = '2';
+    vm.runInContext("queue = ['3', '2']; resolvedRaw = JSON.stringify(queue);", context);
+    get('mv-grid').events['mv-wall-rendered']();
+    assert.equal(target.selectedOptions[0].disabled, true, 'reorder requires a fresh destination');
+    const choice = get('mv-queued-scenes').children[0].children[0];
     await choice.events.click();
     assert.equal(changes.length, 0, 'a vanished destination cannot change another pane');
     target.value = '2';
@@ -119,7 +122,25 @@ vm.runInContext(`
 (async () => {
     await assert.rejects(vm.runInContext("chooseScene('1', '2', true)", swapping), /video changed/);
     assert.equal(writes, 0, 'an old Playing now choice cannot become a library replacement');
+    await assert.rejects(vm.runInContext("chooseScene('1', '3', false)", swapping), /already playing/);
+    assert.equal(writes, 0, 'a library choice cannot become a swap');
     await vm.runInContext("chooseScene('1', '3', true)", swapping);
     assert.equal(writes, 1);
     assert.equal(vm.runInContext("queue.join(',')", swapping), '3,1');
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+const focusMode = source.slice(source.indexOf('    function applyFocusMode('),
+    source.indexOf('    function toggleSmartLayout('));
+let cleared = 0;
+let smartLayoutRuns = 0;
+const modes = vm.createContext({
+    playerSettings: { smartLayout: false },
+    document: { body: { classList: { toggle() {} } }, getElementById: () => null },
+    clearJustifiedLayout: () => { cleared++; },
+    applyJustifiedLayout: () => { smartLayoutRuns++; }
+});
+vm.runInContext(focusMode + 'applyFocusMode(true);', modes);
+assert.equal(cleared, 1, 'Focus clears automatic sizing when Smart is off');
+assert.equal(smartLayoutRuns, 0);
+vm.runInContext('playerSettings.smartLayout = true; applyFocusMode(true);', modes);
+assert.equal(smartLayoutRuns, 1, 'Smart still sizes panes with Focus on');
