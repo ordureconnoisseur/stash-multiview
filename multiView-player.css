@@ -44,6 +44,8 @@ html, body {
     align-items: center;
     gap: 8px;
     padding: 0 12px;
+    overflow-x: auto;
+    scrollbar-width: thin;
     z-index: 100;
 }
 

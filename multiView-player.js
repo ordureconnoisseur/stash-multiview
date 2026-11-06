@@ -4,6 +4,7 @@
     const STORAGE_KEY = 'stash-multiview-queue';
     const VIEWS_KEY = 'stash-multiview-saved-views';
     let paneSizes = [];
+    let viewSeekController = null;
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
     const ROULETTE_MODE_KEY = 'stash-multiview-roulette-mode'; // 'replace' | 'add'
     const SETTINGS_KEY = 'stash-multiview-settings';
@@ -832,8 +833,7 @@
     // (single letters lower-cased, ' ' -> 'Space') or a mouse button ('Mouse<n>'
     // where n is event.button: 1 middle, 2 right, 3 back, 4 forward). `run` gets
     // the originating event so cell-scoped actions can find the target.
-    // The "All" actions live as top-bar buttons; shortcuts instead target the
-    // single cell under the cursor so a mouse button can act on one panel.
+    // Pane actions target the cell under the cursor. Global actions are also bindable.
     const KEYBIND_ACTIONS = [
         { id: 'playPauseHover', label: 'Play / Pause (hovered)',  run: e => playPauseHoveredCell(e) },
         { id: 'muteHover',      label: 'Mute / Unmute (hovered)', run: e => muteHoveredCell(e) },
@@ -847,8 +847,34 @@
         { id: 'fullscreen',     label: 'Toggle Full Screen',      run: () => toggleFullscreen() },
         { id: 'roulette',       label: 'Open Roulette',           run: () => openMenuPanel() },
         { id: 'reroll',         label: 'Reroll one pane',         run: e => rerollPane(e) },
+        { id: 'roll', label: 'Roll using menu settings', run: e => {
+            if (e.repeat) return;
+            if (!document.getElementById('mv-menu-panel')) openMenuPanel();
+            document.querySelector('#mv-menu-panel .mv-menu-roll-btn').click();
+        } },
+        { id: 'undoRoll', label: 'Undo last roll', run: e => { if (!e.repeat) undoLastRoll(); } },
+        { id: 'playPauseAll', label: 'Play / Pause all', run: () => playPauseAll() },
+        { id: 'muteAll', label: 'Mute / Unmute all', run: () => toggleMuteAll() },
+        { id: 'oAll', label: 'O counter all', run: () => incrementAllO() },
+        { id: 'restartHover', label: 'Restart video (hovered)', run: e => hoveredCell(e)?.querySelector('.mv-cell-prev')?.click() },
+        { id: 'nextHover', label: 'Next / Restart video (hovered)', run: e => hoveredCell(e)?.querySelector('.mv-cell-next')?.click() },
+        { id: 'removeHover', label: 'Remove video (hovered)', run: e => hoveredCell(e)?.querySelector('.mv-cell-remove')?.click() },
+        { id: 'volumeHover', label: 'Volume controls (hovered)', run: e => hoveredCell(e)?.querySelector('.mv-cell-audio-btn')?.click() },
+        { id: 'clearAllLoops', label: 'Clear all loops', run: () => clearAllLoops() },
+        { id: 'favorites', label: 'Open favorites / pane sizes', run: () => document.getElementById('mv-views-btn').click() },
+        { id: 'saveFavorite', label: 'Save favorite (enter name)', run: () => {
+            document.getElementById('mv-views-btn').click();
+            document.querySelector('#mv-save-view input').focus();
+        } },
+        { id: 'loadFavorite', label: 'Load selected favorite', run: e => {
+            if (e.repeat) return;
+            document.getElementById('mv-views-btn').click();
+            document.getElementById('mv-load-view').click();
+        } },
+        { id: 'settings', label: 'Open player settings', run: () => openSettingsModal() },
+        { id: 'shortcuts', label: 'Edit keybinds', run: () => openSettingsModal('Shortcuts') },
     ];
-    const DEFAULT_KEYBINDS = { playPauseHover: '', muteHover: 'Mouse1', oHover: '', loopSetA: 'a', loopSetB: 'b', loopClear: 'l', seekBack: 'ArrowLeft', seekForward: 'ArrowRight', focus: 'f', fullscreen: '', roulette: '', reroll: 'r' };
+    const DEFAULT_KEYBINDS = { playPauseHover: '', muteHover: 'Mouse1', oHover: '', loopSetA: 'a', loopSetB: 'b', loopClear: 'l', seekBack: 'ArrowLeft', seekForward: 'ArrowRight', focus: 'f', fullscreen: '', roulette: '', reroll: 'r', undoRoll: 'Shift+r' };
     // Targets where a non-left button keeps its native meaning, so a mouse
     // shortcut must NOT fire over them: links (middle-click opens a new tab) and
     // the settings/menu/volume panels (which contain their own controls). NOTE:
@@ -926,6 +952,15 @@
         return k.length === 1 ? k.toLowerCase() : k;
     }
     const KEY_LABELS = { ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down' };
+    function keyboardBinding(e) {
+        const key = normalizeKey(e.key);
+        const modifiers = [];
+        if (e.ctrlKey) modifiers.push('Ctrl');
+        if (e.metaKey) modifiers.push('Meta');
+        if (e.altKey) modifiers.push('Alt');
+        if (e.shiftKey) modifiers.push('Shift');
+        return [...modifiers, key].join('+');
+    }
     function keyLabel(k) {
         if (!k) return 'Unbound';
         if (MOUSE_LABELS[k]) return MOUSE_LABELS[k];
@@ -959,7 +994,7 @@
     // a colliding default is dropped rather than leaving two actions on one key
     // (runBinding would silently fire whichever comes first in KEYBIND_ACTIONS).
     function mergeKeybinds(saved = {}) {
-        const merged = { ...DEFAULT_KEYBINDS, ...saved };
+        const merged = { ...Object.fromEntries(KEYBIND_ACTIONS.map(action => [action.id, ''])), ...DEFAULT_KEYBINDS, ...saved };
         const taken = new Set(Object.values(saved).filter(Boolean));
         for (const id of Object.keys(merged)) {
             if (id in saved) continue;
@@ -1037,7 +1072,7 @@
         }
     }
 
-    function openSettingsModal() {
+    function openSettingsModal(openSection) {
         if (document.getElementById('mv-settings-modal')) return;
 
         const overlay = document.createElement('div');
@@ -1364,6 +1399,7 @@
                     }
                     playerSettings.keybinds[action.id] = binding;
                     savePlayerSettings();
+                    refreshUndoButton();
                 }
                 renderKeybindRows();
             };
@@ -1372,7 +1408,8 @@
                 swallow(ev);
                 if (ev.key === 'Escape') return finish(null);              // cancel
                 if (ev.key === 'Backspace' || ev.key === 'Delete') return finish('');
-                finish(normalizeKey(ev.key));
+                if (['Shift', 'Control', 'Alt', 'Meta'].includes(ev.key)) return;
+                finish(keyboardBinding(ev));
             };
             const onMouse = ev => {
                 swallow(ev);
@@ -1403,6 +1440,7 @@
         overlay.appendChild(card);
         overlay.addEventListener('click', e => { if (e.target === overlay) closeSettingsModal(); });
         document.body.appendChild(overlay);
+        if (openSection === 'Shortcuts') kbSection.open = true;
     }
 
     function closeSettingsModal() {
@@ -1970,6 +2008,9 @@
                 && Array.isArray(view.scenes) && view.scenes.length > 0 && view.scenes.length <= 16
                 && view.scenes.every(id => typeof id === 'string' && /^\d+$/.test(id))
                 && new Set(view.scenes).size === view.scenes.length
+                && (view.positions === undefined || (Array.isArray(view.positions)
+                    && view.positions.length === view.scenes.length
+                    && view.positions.every(time => Number.isFinite(time) && time >= 0)))
                 && Array.isArray(view.sizes) && view.sizes.length === view.scenes.length
                 && view.sizes.every(size => size === null || (Array.isArray(size) && size.length === 2
                     && size.every(value => value === null || (Number.isInteger(value) && value >= 10 && value <= 100)))));
@@ -1990,6 +2031,28 @@
             }
             paneSizes = view.sizes;
             await resyncFromCache();
+            viewSeekController?.abort();
+            viewSeekController = new AbortController();
+            if (view.positions) {
+                const cells = Array.from(document.getElementById('mv-grid').children);
+                cells.forEach(cell => {
+                    const id = cell.dataset.sceneId;
+                    const index = view.scenes.indexOf(id);
+                    const video = cell.querySelector('video');
+                    if (index < 0 || !video) return;
+                    const target = view.positions[index];
+                    const seek = () => {
+                        if (!cell.isConnected) return;
+                        const loop = getLoop(id);
+                        if (loop && (target < loop.a || target >= loop.b)) clearLoop(id);
+                        applyWheelSeek(id, video, target - effectivePlayhead(video, id));
+                    };
+                    if (video.readyState >= 1) seek();
+                    else video.addEventListener('loadedmetadata', seek, {
+                        once: true, signal: viewSeekController.signal
+                    });
+                });
+            }
             return true;
         } finally {
             rouletteBusy = false;
@@ -2098,6 +2161,11 @@
             const view = {
                 name,
                 scenes: visible,
+                positions: Array.from(grid.children, cell => {
+                    const video = cell.querySelector('video');
+                    const time = video ? effectivePlayhead(video, cell.dataset.sceneId) : 0;
+                    return Number.isFinite(time) ? Math.max(0, time) : 0;
+                }),
                 sizes: visible.map((_, index) => paneSizes[index] || null)
             };
             if (!storeViews([...views, view])) return;
@@ -3188,7 +3256,11 @@
     // �"?�"? Roulette �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     function refreshUndoButton() {
-        document.getElementById('mv-undo-roll-btn').disabled = rouletteBusy || !undoRoll;
+        const button = document.getElementById('mv-undo-roll-btn');
+        button.disabled = rouletteBusy || !undoRoll;
+        const binding = playerSettings.keybinds.undoRoll;
+        button.title = 'Undo last roll' + (binding ? ' (' + keyLabel(binding) + ')' : '');
+        button.ariaKeyShortcuts = binding || '';
     }
 
     function setUndoRoll(undo, sceneId = null) {
@@ -3390,6 +3462,15 @@
 
         rouletteSection.append(heading, sliderRow, modeRow, hint, rollBtn);
         panel.appendChild(rouletteSection);
+        [['Favorite views', () => document.getElementById('mv-views-btn').click()],
+         ['Edit keybinds', () => openSettingsModal('Shortcuts')],
+         ['Player settings', () => openSettingsModal()]].forEach(([label, run]) => {
+            const button = document.createElement('button');
+            button.className = 'mv-menu-roll-btn';
+            button.textContent = label;
+            button.addEventListener('click', () => { closeMenuPanel(); run(); });
+            panel.appendChild(button);
+        });
         document.body.appendChild(panel);
 
         setTimeout(() => {
@@ -3448,14 +3529,10 @@
             // and stand down while a rebind capture is grabbing the next key.
             if (keybindCaptureActive || document.getElementById('mv-views').open) return;
             const tag = e.target.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
             const binding = normalizeKey(e.key);
-            if (binding === 'r' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
-                    && !isSeekChord(e, binding)) {
-                e.preventDefault();
-                if (!e.repeat) undoLastRoll();
-                return;
-            }
+            const chord = keyboardBinding(e);
+            if (chord !== binding && runBinding(chord, e)) return;
             // The one exception: a modifier the user has given a seek role,
             // pressed with a key bound to a seek action, is ours. runBinding
             // calls preventDefault, which is also what stops Alt+Left from
