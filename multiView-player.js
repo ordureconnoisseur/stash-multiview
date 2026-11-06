@@ -205,8 +205,8 @@
     // binge-iOS, and multiview-ios. Config is authoritative; localStorage
     // is a local cache. The player seeds the cache from config on load,
     // polls it, and writes its own changes (remove tile / roulette) back
-    // to config via read-modify-write so it never clobbers a concurrent
-    // change from another client.
+    // to config under the same origin lock as the scene picker. Stash
+    // does not offer conditional writes for clients outside that lock.
     async function fetchConfigQueue() {
         const r = await fetch('/graphql', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2580,18 +2580,28 @@
         // (all one orientation) keep the plain justified rows.
         const hasPortrait  = aspectRatios.some(a => a < 1);
         const hasLandscape = aspectRatios.some(a => a >= 1);
-        const positions = (hasPortrait && hasLandscape)
-            ? computeBandedLayout(aspectRatios, containerWidth, containerHeight, GAP)
-            : computeJustifiedLayout(aspectRatios, containerWidth, containerHeight, GAP);
-        const toolbarHeight = document.getElementById('mv-topbar').offsetHeight;
+        const compute = hasPortrait && hasLandscape ? computeBandedLayout : computeJustifiedLayout;
+        let positions = compute(aspectRatios, containerWidth, containerHeight, GAP);
+        const toolbarHeight = playerSettings.focusMode ? document.getElementById('mv-topbar').offsetHeight : 0;
+        let topInset = 0;
+        // If the toolbar covers most of any top pane, reserve space above
+        // the wall so that pane's title and picker can still fit.
+        const paneBarHeight = 32;
+        if (toolbarHeight && containerHeight > toolbarHeight && positions.some(
+            pane => pane.top < toolbarHeight && pane.top + pane.height < toolbarHeight + paneBarHeight
+        )) {
+            topInset = toolbarHeight;
+            positions = compute(aspectRatios, containerWidth, containerHeight - topInset, GAP);
+        }
         cells.forEach((cell, i) => {
             const p = positions[i];
             if (!p) return;
             cell.style.left   = p.left   + 'px';
-            cell.style.top    = p.top    + 'px';
+            const top = p.top + topInset;
+            cell.style.top    = top      + 'px';
             cell.style.width  = p.width  + 'px';
             cell.style.height = p.height + 'px';
-            cell.style.setProperty('--mv-toolbar-overlap', Math.max(0, toolbarHeight - p.top) + 'px');
+            cell.style.setProperty('--mv-toolbar-overlap', Math.max(0, toolbarHeight - top) + 'px');
         });
     }
 

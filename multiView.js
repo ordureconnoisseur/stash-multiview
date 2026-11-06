@@ -35,8 +35,8 @@
     // binge web, binge-iOS, multiview-ios). The single source of truth is
     // Stash's plugin config (configuration.plugins.multiView.queue);
     // localStorage is only a fast local cache, always reconciled FROM
-    // config. Every mutation is a read-modify-write of config so a
-    // concurrent change from another client is never clobbered.
+    // config. Browser tabs share an origin lock for queue writes. Stash
+    // has no conditional write, so other clients can race a browser write.
 
     // Fast synchronous read of the local cache — for rendering buttons.
     function getQueue() {
@@ -101,8 +101,8 @@
     // the new array, or null to abort (already-satisfied / rejected). For
     // scene toggles, pass {verify, want} to read back and retry if a
     // concurrent writer clobbered our intent — idempotent set intents
-    // converge. configurePlugin is last-write-wins with no CAS, so this
-    // read-back-and-retry is what makes concurrency safe.
+    // converge if the intent was overwritten before read-back. This cannot
+    // prevent a concurrent client from writing between our read and write.
     function mutateConfigQueue(mutator, opts) {
         const update = () => updateConfigQueue(mutator, opts);
         return navigator.locks?.request(STORAGE_KEY, update) ?? update();

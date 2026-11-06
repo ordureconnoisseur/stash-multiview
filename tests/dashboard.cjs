@@ -75,3 +75,22 @@ for (const [compute, ratios] of [
             'layout accounts for the gaps within the viewport');
     }
 }
+
+const focusLayout = source.slice(source.indexOf('    function applyJustifiedLayout()'),
+    source.indexOf('    function clearJustifiedLayout()'));
+const mixed = [...Array(3).fill(16 / 9), ...Array(13).fill(9 / 16)];
+const cells = mixed.map(videoWidth => ({
+    querySelector: () => ({ videoWidth, videoHeight: 1 }),
+    style: { setProperty(name, value) { this[name] = value; } }
+}));
+const grid = { clientWidth: 390, clientHeight: 844, querySelectorAll: () => cells };
+vm.runInNewContext(layout + focusLayout + 'applyJustifiedLayout();', {
+    playerSettings: { focusMode: true, smartLayout: true },
+    document: { getElementById: id => id === 'mv-grid' ? grid : { offsetHeight: 44 } }
+});
+for (const cell of cells) {
+    const top = parseFloat(cell.style.top);
+    const bottom = top + parseFloat(cell.style.height);
+    assert.ok(top >= 44 && bottom <= 844.001,
+        'Focus leaves room for the toolbar and pane controls on a crowded narrow wall');
+}

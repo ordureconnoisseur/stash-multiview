@@ -1233,6 +1233,9 @@ body:is(.mv-focus, .mv-smart) .mv-cell {
     position: absolute;
 }
 body.mv-focus .mv-pane-bar { inset-block-start: calc(4px + var(--mv-toolbar-overlap, 0px)); }
+body.mv-focus:not(.mv-smart) .mv-cell:not(:hover):not(:focus-within) .mv-pane-bar {
+    opacity: 0;
+}
 body.mv-focus:not(.mv-smart) .mv-cell video {
     object-fit: cover;
 }
