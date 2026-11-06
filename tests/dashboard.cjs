@@ -136,9 +136,12 @@ let smartLayoutRuns = 0;
 const wallLayout = source.slice(source.indexOf('    function applyWallLayout('),
     source.indexOf('    function positionPairDivider('));
 const modeGrid = { children: [], hasAttribute: () => false, toggleAttribute() {} };
+const focusButton = { classList: { toggle() {} } };
+const resetButton = {};
+const modeControls = { 'mv-grid': modeGrid, 'mv-focus-btn': focusButton, 'mv-reset-layout-btn': resetButton };
 const modes = vm.createContext({
     playerSettings: { smartLayout: false },
-    document: { body: { classList: { toggle() {} } }, getElementById: id => id === 'mv-grid' ? modeGrid : null },
+    document: { body: { classList: { toggle() {} } }, getElementById: id => modeControls[id] ?? null },
     pairDrag: null,
     getPairSplit: () => null,
     positionPairDivider() {},
@@ -146,6 +149,8 @@ const modes = vm.createContext({
     applyJustifiedLayout: () => { smartLayoutRuns++; }
 });
 vm.runInContext(focusMode + wallLayout + 'applyFocusMode(true);', modes);
+assert.equal(focusButton.title, 'Exit Focus Mode');
+assert.equal(resetButton.disabled, true, 'Automatic layout has no custom sizes to reset');
 assert.equal(cleared, 1, 'Focus clears automatic sizing when Smart is off');
 assert.equal(smartLayoutRuns, 0);
 vm.runInContext('playerSettings.smartLayout = true; applyFocusMode(true);', modes);

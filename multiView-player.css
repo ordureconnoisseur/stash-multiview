@@ -104,7 +104,8 @@ html, body {
     font-weight: 700;
 }
 #mv-undo-roll-btn:enabled { color: #ffa34f; }
-#mv-undo-roll-btn:disabled { opacity: 0.45; cursor: default; }
+#mv-undo-roll-btn:disabled,
+#mv-reset-layout-btn:disabled { opacity: 0.45; cursor: default; }
 @media (max-width: 500px) {
     #mv-topbar { gap: 4px; padding-inline: 6px; overflow-x: auto; scrollbar-width: thin; }
     #mv-undo-roll-btn { min-width: 52px; padding-inline: 4px; font-size: 12px; }
@@ -1245,13 +1246,14 @@ body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-seekbar {
 
 /* ── Focus mode ──────────────────────────────────────────────────────────── */
 
-body.mv-focus #mv-topbar {
-    opacity: 0;
-    transition: opacity 0.25s;
+body.mv-focus #mv-topbar:not(:hover, :focus-within) {
+    background: transparent;
+    border-color: transparent;
+    scrollbar-color: transparent transparent;
 }
-body.mv-focus #mv-topbar:hover,
-body.mv-focus #mv-topbar:focus-within {
-    opacity: 1;
+body.mv-focus #mv-topbar:not(:hover, :focus-within) > :not(#mv-focus-btn) {
+    opacity: 0;
+    pointer-events: none;
 }
 body.mv-focus.mv-smart #mv-grid { top: 0; }
 body.mv-smart #mv-grid { display: block; padding: 0; }

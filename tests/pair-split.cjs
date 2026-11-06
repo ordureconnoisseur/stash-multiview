@@ -42,3 +42,39 @@ second("storePairSplit(['2','10'], null)");
 assert.equal(first("getPairSplit(['10','2'])"), null);
 assert.equal(first("getPairSplit(['3','4'])"), 74);
 console.log('Pair splits migrate, persist across tabs, follow swapped videos, and reset independently');
+
+const dividerSetup = source.slice(source.indexOf('    function setupPairDivider('),
+    source.indexOf('    function readViews('));
+const listeners = {};
+const divider = {
+    focus() {},
+    getAttribute: () => '50',
+    setPointerCapture() {},
+    addEventListener: (name, listener) => { listeners[name] = listener; }
+};
+const grid = {
+    children: ['1', '2'].map(sceneId => ({ dataset: { sceneId } })),
+    getBoundingClientRect: () => ({ width: 1000 })
+};
+const splits = [];
+vm.runInNewContext(`
+    const PAIR_SPLIT_MIN = 20, PAIR_SPLIT_MAX = 80;
+    let pairDrag = null;
+    ${dividerSetup}
+    setupPairDivider();
+`, {
+    document: { getElementById: id => id === 'mv-grid' ? grid : divider },
+    storePairSplit: (ids, width) => splits.push(width),
+    applyWallLayout() {}
+});
+
+const click = { button: 0, clientX: 500, pointerId: 1 };
+listeners.pointerdown(click);
+listeners.pointermove({ ...click, clientX: 501 });
+listeners.pointerup(click);
+assert.deepEqual(splits, [], 'A click with slight movement must not save a split');
+listeners.pointerdown(click);
+listeners.pointermove({ ...click, clientX: 650 });
+listeners.pointerup(click);
+listeners.dblclick();
+assert.deepEqual(splits, [65, null], 'A deliberate drag saves and a double-click clears the split');

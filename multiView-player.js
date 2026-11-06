@@ -1092,7 +1092,11 @@
     function applyFocusMode(enabled) {
         document.body.classList.toggle('mv-focus', enabled);
         document.body.classList.toggle('mv-smart', playerSettings.smartLayout);
-        document.getElementById('mv-focus-btn')?.classList.toggle('active', enabled);
+        const focus = document.getElementById('mv-focus-btn');
+        if (focus) {
+            focus.classList.toggle('active', enabled);
+            focus.title = enabled ? 'Exit Focus Mode' : 'Focus Mode';
+        }
         const smart = document.getElementById('mv-smart-btn');
         smart?.setAttribute('aria-pressed', String(playerSettings.smartLayout));
         if (!playerSettings.smartLayout) clearJustifiedLayout();
@@ -2096,6 +2100,18 @@
             else if (!hadSplit) clearJustifiedLayout();
         }
         positionPairDivider(grid, cells);
+        document.getElementById('mv-reset-layout-btn').disabled =
+            split === null && !grid.hasAttribute('data-custom-sizes');
+    }
+
+    function resetWallSizes() {
+        const grid = document.getElementById('mv-grid');
+        const ids = Array.from(grid.children, cell => cell.dataset.sceneId);
+        pairDrag = null;
+        paneSizes = [];
+        if (ids.length === 2) storePairSplit(ids, null);
+        applyPaneSizes();
+        applyWallLayout();
     }
 
     function positionPairDivider(grid, cells) {
@@ -2147,8 +2163,10 @@
         });
         divider.addEventListener('pointermove', event => {
             if (pairDrag?.pointerId !== event.pointerId) return;
-            if (event.clientX === pairDrag.start && pairDrag.width === null) return;
-            pairDrag.width = clamp(pairDrag.initial + 100 * (event.clientX - pairDrag.start) / pairDrag.total);
+            const offset = event.clientX - pairDrag.start;
+            // Leave a small dead zone so a click does not create a saved split.
+            if (pairDrag.width === null && Math.abs(offset) < 4) return;
+            pairDrag.width = clamp(pairDrag.initial + 100 * offset / pairDrag.total);
             applyWallLayout();
         });
         divider.addEventListener('pointerup', event => {
@@ -2436,12 +2454,9 @@
             status.textContent = 'View deleted.';
         });
         reset.addEventListener('click', () => {
-            paneSizes = [];
-            const ids = visibleScenes();
-            if (ids.length === 2) storePairSplit(ids, null);
-            applyPaneSizes();
-            applyWallLayout();
+            resetWallSizes();
             refresh(select.value);
+            status.textContent = 'Layout reset.';
         });
     }
 
@@ -3967,6 +3982,7 @@
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
         setupViews();
         setupPairDivider();
+        document.getElementById('mv-reset-layout-btn').addEventListener('click', resetWallSizes);
         setupQueuePicker();
         document.getElementById('mv-smart-btn').addEventListener('click', toggleSmartLayout);
         document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);

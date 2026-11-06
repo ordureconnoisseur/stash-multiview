@@ -23,7 +23,7 @@
             } catch (e) { /* localStorage may be disabled — fall through */ }
         })();
     </script>
-    <link rel="stylesheet" href="multiView-player.css?v=pair-split1">
+    <link rel="stylesheet" href="multiView-player.css?v=layout-reset1">
     <script>
         /* Optional theme stylesheet — host theme can write a URL pointing
            at its own multiview-player overlay CSS. We append the link
@@ -78,6 +78,7 @@
 
     <button id="mv-queue-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Queue</button>
     <button id="mv-smart-btn" class="mv-topbar-icon-btn mv-text-btn" type="button" aria-pressed="false">Smart layout</button>
+    <button id="mv-reset-layout-btn" class="mv-topbar-icon-btn mv-text-btn" type="button" disabled>Reset layout</button>
     <button id="mv-save-view-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Save view</button>
     <button id="mv-views-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Favorites</button>
     <button id="mv-settings-btn" class="mv-topbar-icon-btn" title="Player Settings">
@@ -138,6 +139,6 @@
     <p>Nothing queued. Use <strong>Queue</strong> to search your library, or <strong>Roll</strong> to play random videos.</p>
 </div>
 
-<script src="multiView-player.js?v=pair-split6"></script>
+<script src="multiView-player.js?v=layout-reset1"></script>
 </body>
 </html>
