@@ -7,6 +7,8 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '..', 'multiView-player.js'), 'utf8');
 const views = source.slice(source.indexOf('    function readViews()'),
     source.indexOf('    function setupViews()'));
+const sceneMeta = source.slice(source.indexOf('    async function fetchSceneMeta('),
+    source.indexOf('    async function loadSceneMeta('));
 const initialSource = source.slice(source.indexOf('            const baseSrc = pickStream(id);'),
     source.indexOf('            video.autoplay = true;'));
 const keys = source.slice(source.indexOf('    function normalizeKey('),
@@ -35,7 +37,18 @@ const context = vm.createContext({
     recordAction: id => actions.push(id),
     localStorage: { getItem: () => stored },
     document: { getElementById: () => ({ children: [], open: false }) },
-    fetchSceneMeta: async id => id !== unavailable,
+    fetch: async (_url, request) => {
+        const { id } = JSON.parse(request.body).variables;
+        return {
+            ok: true,
+            json: async () => ({ data: { findScene: {
+                title: 'Fixture video',
+                files: id === unavailable ? [] : [{ path: '/fixture.webm', duration: 180 }],
+                sceneStreams: [],
+            } } }),
+        };
+    },
+    parseStreams: () => ({}),
     mutateConfigQueue: async callback => {
         const result = callback(liveQueue);
         if (result) writes++;
@@ -71,6 +84,7 @@ vm.runInContext(`
     const seekBases = new Map();
     const playerSettings = {fineModifier: 'shift', allCellsModifier: 'alt', keybinds: {}};
     const SEEK_ACTION_IDS = ['seekBack', 'seekForward'];
+    ${sceneMeta}
     ${views}
     ${keys}
     ${seekBinding}
@@ -109,7 +123,7 @@ vm.runInContext(`
 
     unavailable = '2';
     await assert.rejects(context.restoreView(view), /saved video is unavailable/);
-    assert.equal(writes, 0, 'an unavailable saved video leaves the queue untouched');
+    assert.equal(writes, 0, 'a saved scene with no video file leaves the queue untouched');
     unavailable = undefined;
     liveQueue = ['3'];
     await assert.rejects(context.restoreView(view), /queue changed/);

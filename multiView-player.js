@@ -1537,7 +1537,7 @@
             });
             const data = await res.json();
             const scene = data?.data?.findScene;
-            if (!res.ok || data.errors?.length || !scene) return false;
+            if (!res.ok || data.errors?.length || !scene?.files?.length) return false;
             let title = scene.title;
             if (!title) {
                 const path = scene.files?.[0]?.path;
