@@ -33,7 +33,7 @@ class Element {
         document: { getElementById: get, createElement: () => new Element() },
         Option: class { constructor(label, value) { this.label = label; this.value = value; } },
         closeMenuPanel() {},
-        chooseScene: async (target, id) => { changes.push([target, id]); }
+        chooseScene: async (target, id, swapOnly) => { changes.push([target, id, swapOnly]); }
     });
     vm.runInContext(`
         let queue = ['1', '2', '3'];
@@ -55,7 +55,7 @@ class Element {
     assert.equal(changes.length, 0, 'a vanished destination cannot change another pane');
     target.value = '2';
     await choice.events.click();
-    assert.deepEqual(changes, [['2', '3']]);
+    assert.deepEqual(changes, [['2', '3', true]]);
     console.log('Queue picker requires a new destination after the chosen pane disappears');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
@@ -94,3 +94,32 @@ for (const cell of cells) {
     assert.ok(top >= 44 && bottom <= 844.001,
         'Focus leaves room for the toolbar and pane controls on a crowded narrow wall');
 }
+
+const chooseScene = source.slice(source.indexOf('    async function chooseScene('),
+    source.indexOf('    function setupQueuePicker()'));
+let writes = 0;
+const swapping = vm.createContext({
+    fetchSceneMeta: async () => true,
+    refreshUndoButton() {},
+    flushDeferredQueueSync() {},
+    flushDeferredAdvances() {},
+    setUndoRoll() {},
+    render() {},
+    mutateConfigQueue: async change => {
+        writes++;
+        return change(['1', { type: 'filter', filter: {} }]);
+    }
+});
+vm.runInContext(`
+    let rouletteBusy = false, queueRemoval = null, queueResync = null;
+    const queue = ['1', '3'], rawSlots = [0, 1], filterBackedCells = new Map();
+    let resolvedRaw = JSON.stringify(['1', { type: 'filter', filter: {} }]);
+    ${chooseScene}
+`, swapping);
+(async () => {
+    await assert.rejects(vm.runInContext("chooseScene('1', '2', true)", swapping), /video changed/);
+    assert.equal(writes, 0, 'an old Playing now choice cannot become a library replacement');
+    await vm.runInContext("chooseScene('1', '3', true)", swapping);
+    assert.equal(writes, 1);
+    assert.equal(vm.runInContext("queue.join(',')", swapping), '3,1');
+})().catch(error => { console.error(error); process.exitCode = 1; });

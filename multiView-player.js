@@ -2268,11 +2268,12 @@
         });
     }
 
-    async function chooseScene(targetId, id) {
+    async function chooseScene(targetId, id, swapOnly) {
         if (rouletteBusy || queueRemoval || queueResync) throw new Error('The queue is busy. Try again.');
         const target = queue.indexOf(targetId);
         const source = queue.indexOf(id);
         if (targetId && target < 0) throw new Error('That pane changed. Choose a destination again.');
+        if (swapOnly && source < 0) throw new Error('That video changed. Choose another video to swap.');
         if (target === source && source >= 0) return;
         if (target < 0 && source >= 0) throw new Error('This video is already playing. Choose a pane to swap.');
         rouletteBusy = true;
@@ -2326,7 +2327,7 @@
         let search;
         let choosing = false;
 
-        function choice(id, label) {
+        function choice(id, label, swapOnly = false) {
             const item = document.createElement('li');
             const button = document.createElement('button');
             button.type = 'button';
@@ -2340,7 +2341,7 @@
                 }
                 choosing = true;
                 try {
-                    await chooseScene(target.value, id);
+                    await chooseScene(target.value, id, swapOnly);
                     dialog.close();
                 } catch (error) {
                     status.textContent = error.message;
@@ -2362,7 +2363,7 @@
             target.replaceChildren(...options);
             target.value = preferred;
             playing.replaceChildren(...queue.map((id, index) =>
-                choice(id, `Pane ${index + 1} · ${scenes[id]?.title || id}`)));
+                choice(id, `Pane ${index + 1} · ${scenes[id]?.title || id}`, true)));
             if (!queue.length) playing.textContent = 'The queue is empty.';
         }
 
