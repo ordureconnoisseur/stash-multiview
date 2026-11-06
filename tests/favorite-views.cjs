@@ -115,6 +115,17 @@ vm.runInContext(`
 
 (async () => {
     assert.equal(context.readViews().length, 1);
+    const suggested = vm.runInContext(`
+        scenes['1'].title = 'Aerial view';
+        scenes['2'].title = 'City lights';
+        suggestViewName(['1', '2'], ['Aerial view + City lights']);
+    `, context);
+    assert.equal(suggested, 'Aerial view + City lights (2)');
+    const longName = vm.runInContext(`
+        scenes['1'].title = '🌆'.repeat(80);
+        suggestViewName(['1'], []);
+    `, context);
+    assert.ok(longName.length <= 60 && longName.isWellFormed());
     for (const positions of [[-1, 70], [39], ['39', 70]]) {
         stored = JSON.stringify([{ ...view, positions }]);
         assert.equal(context.readViews().length, 0);
@@ -153,6 +164,7 @@ vm.runInContext(`
     transcodeId = undefined;
 
     await context.restoreView(legacy);
+    assert.equal(restoredSplit, null, 'a legacy Favorite uses its saved pane sizes');
     lateStarts.forEach(start => start());
     videos.forEach(video => video.dispatchEvent(new Event('loadedmetadata')));
     assert.deepEqual(videos.map(video => video.currentTime), [130, 130]);

@@ -3,11 +3,11 @@
 
     const STORAGE_KEY = 'stash-multiview-queue';
     const VIEWS_KEY = 'stash-multiview-saved-views';
-    const PAIR_SPLITS_KEY = 'stash-multiview-pair-splits';
+    const LEGACY_PAIR_SPLITS_KEY = 'stash-multiview-pair-splits';
+    const PAIR_SPLIT_PREFIX = 'stash-multiview-pair-split:';
     const PAIR_SPLIT_MIN = 20;
     const PAIR_SPLIT_MAX = 80;
-    const PAIR_SPLIT_LIMIT = 100;
-    let pairSplits = readPairSplits();
+    const unsavedPairSplits = new Map();
     let pairDrag = null;
     let paneSizes = [];
     let favoritePositions = null;
@@ -2041,30 +2041,42 @@
         return Number.isInteger(value) && value >= PAIR_SPLIT_MIN && value <= PAIR_SPLIT_MAX;
     }
 
-    function readPairSplits() {
+    function migratePairSplits() {
         try {
-            return new Map(Object.entries(JSON.parse(localStorage.getItem(PAIR_SPLITS_KEY) || '{}'))
-                .filter(([key, value]) => /^\d+:\d+$/.test(key) && isPairSplit(value)));
-        } catch { return new Map(); }
+            const raw = localStorage.getItem(LEGACY_PAIR_SPLITS_KEY);
+            if (raw === null) return;
+            for (const [ids, width] of Object.entries(JSON.parse(raw))) {
+                if (!/^\d+:\d+$/.test(ids) || !isPairSplit(width)) continue;
+                const key = PAIR_SPLIT_PREFIX + ids;
+                if (localStorage.getItem(key) === null) localStorage.setItem(key, String(width));
+            }
+            localStorage.removeItem(LEGACY_PAIR_SPLITS_KEY);
+        } catch { /* Keep the old entries if the browser cannot finish migrating. */ }
     }
 
     function pairSplitKey(ids) {
-        return ids.slice().sort().join(':');
+        return PAIR_SPLIT_PREFIX + ids.slice().sort().join(':');
     }
 
     function getPairSplit(ids) {
         if (ids.length !== 2) return null;
-        const width = pairSplits.get(pairSplitKey(ids));
-        return width === undefined ? null : ids[0] < ids[1] ? width : 100 - width;
+        const key = pairSplitKey(ids);
+        let width = unsavedPairSplits.get(key);
+        if (width === undefined) {
+            try { width = Number(localStorage.getItem(key)); }
+            catch { return null; }
+        }
+        return isPairSplit(width) ? (ids[0] < ids[1] ? width : 100 - width) : null;
     }
 
     function storePairSplit(ids, width) {
         const key = pairSplitKey(ids);
-        pairSplits.delete(key);
-        if (width !== null) pairSplits.set(key, ids[0] < ids[1] ? width : 100 - width);
-        if (pairSplits.size > PAIR_SPLIT_LIMIT) pairSplits.delete(pairSplits.keys().next().value);
-        try { localStorage.setItem(PAIR_SPLITS_KEY, JSON.stringify(Object.fromEntries(pairSplits))); }
-        catch { /* The current tab can still use the split. */ }
+        const stored = width === null || ids[0] < ids[1] ? width : 100 - width;
+        try {
+            if (stored === null) localStorage.removeItem(key);
+            else localStorage.setItem(key, String(stored));
+            unsavedPairSplits.delete(key);
+        } catch { unsavedPairSplits.set(key, stored); }
     }
 
     function applyWallLayout() {
@@ -2207,7 +2219,7 @@
                 return false;
             }
             paneSizes = view.sizes;
-            if (view.pairSplit !== undefined) storePairSplit(view.scenes, view.pairSplit);
+            if (view.scenes.length === 2) storePairSplit(view.scenes, view.pairSplit ?? null);
             if (typeof view.smartLayout === 'boolean') {
                 playerSettings.smartLayout = view.smartLayout;
                 savePlayerSettings();
@@ -2231,6 +2243,22 @@
         }
     }
 
+    function suggestViewName(ids, names, limit = 60) {
+        const shorten = (title, length) => title.length <= length ? title
+            : title.slice(0, length - 1).replace(/[\uD800-\uDBFF]$/, '').trimEnd() + '…';
+        const titles = ids.map(id => scenes[id]?.title?.replace(/\s+/g, ' ').trim() || `Scene ${id}`);
+        const base = titles.length === 2 ? titles.map(title => shorten(title, 27)).join(' + ')
+            : titles.length > 2 ? shorten(titles[0], 45) + ` + ${titles.length - 1} more`
+            : titles[0] || 'My view';
+        const taken = new Set(names);
+        let name = shorten(base, limit);
+        for (let i = 2; taken.has(name); i++) {
+            const suffix = ` (${i})`;
+            name = shorten(base, limit - suffix.length) + suffix;
+        }
+        return name;
+    }
+
     function setupViews() {
         const dialog = document.getElementById('mv-views');
         const select = document.getElementById('mv-saved-views');
@@ -2241,6 +2269,9 @@
         const remove = document.getElementById('mv-delete-view');
         const update = document.getElementById('mv-update-view');
         const reset = document.getElementById('mv-reset-sizes');
+        const suggest = document.getElementById('mv-suggest-view-name');
+        const nameInput = form.elements.name;
+        let lastSuggestion = '';
         const grid = document.getElementById('mv-grid');
         const visibleScenes = () => Array.from(grid.children, cell => cell.dataset.sceneId);
 
@@ -2258,7 +2289,7 @@
         let paneSignature = '';
         function refreshPanes(force = false) {
             const visible = visibleScenes();
-            form.querySelector('button').disabled = !visible.length;
+            form.querySelector('[type=submit]').disabled = suggest.disabled = !visible.length;
             reset.disabled = !visible.length;
             update.disabled = !select.value || !visible.length;
             const defaults = defaultPaneSize(grid);
@@ -2318,11 +2349,24 @@
             if (dialog.open) refreshPanes();
         }));
 
+        function fillSuggestedName() {
+            lastSuggestion = suggestViewName(visibleScenes(), readViews().map(view => view.name), nameInput.maxLength);
+            nameInput.value = lastSuggestion;
+        }
+
+        suggest.addEventListener('click', fillSuggestedName);
+
         function openViewDialog(save) {
             status.textContent = '';
             refresh(select.value);
+            if (visibleScenes().length && (!nameInput.value.trim() || nameInput.value === lastSuggestion)) {
+                fillSuggestedName();
+            }
             if (!dialog.open) dialog.showModal();
-            if (save) form.elements.name.focus();
+            if (save) {
+                nameInput.focus();
+                nameInput.select();
+            }
         }
         document.getElementById('mv-views-btn').addEventListener('click', () => openViewDialog(false));
         document.getElementById('mv-save-view-btn').addEventListener('click', () => openViewDialog(true));
@@ -3612,8 +3656,8 @@
 
     // Same-origin cross-tab: the local cache changed in another tab.
     window.addEventListener('storage', e => {
-        if (e.key === PAIR_SPLITS_KEY) {
-            pairSplits = readPairSplits();
+        if (e.key?.startsWith(PAIR_SPLIT_PREFIX)) {
+            unsavedPairSplits.delete(e.key);
             applyWallLayout();
             return;
         }
@@ -3898,6 +3942,7 @@
             try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }
             catch { return {}; }
         })();
+        migratePairSplits();
         playerSettings = loadPlayerSettings(savedSettings);
         applyFocusMode(playerSettings.focusMode);
 
