@@ -279,9 +279,9 @@
 
     // Re-resolve the wall from the current cache (shared by the storage
     // event + the config poll). Preserves currently-playing filter slots.
-    function resyncFromCache() {
+    function resyncFromCache(items = getQueue()) {
         setUndoRoll(null);
-        const pending = resolveQueuePreserving(getQueue());
+        const pending = resolveQueuePreserving(items);
         queueResync = pending;
         pending.finally(() => {
             if (queueResync === pending) {
@@ -524,8 +524,9 @@
         const generation = ++queueGeneration;
         const occupied = new Set(rawQueue.filter(item => typeof item === 'string'));
         const available = new Map();
-        for (const [id, item] of filterBackedCells) {
-            if (occupied.has(id)) continue;
+        for (const id of queue) {
+            const item = filterBackedCells.get(id);
+            if (!item || occupied.has(id)) continue;
             const key = JSON.stringify(item.filter || {});
             if (!available.has(key)) available.set(key, []);
             available.get(key).push(id);
@@ -871,16 +872,17 @@
         { id: 'removeHover', label: 'Remove video (hovered)', run: e => hoveredCell(e)?.querySelector('.mv-cell-remove')?.click() },
         { id: 'volumeHover', label: 'Volume controls (hovered)', run: e => hoveredCell(e)?.querySelector('.mv-cell-audio-btn')?.click() },
         { id: 'clearAllLoops', label: 'Clear all loops', run: () => clearAllLoops() },
-        { id: 'favorites', label: 'Open favorites / pane sizes', run: () => document.getElementById('mv-views-btn').click() },
+        { id: 'favorites', label: 'Open favorites', run: () => document.getElementById('mv-views-btn').click() },
         { id: 'saveFavorite', label: 'Save favorite (enter name)', run: () => {
-            document.getElementById('mv-views-btn').click();
-            document.querySelector('#mv-save-view input').focus();
+            document.getElementById('mv-save-view-btn').click();
         } },
         { id: 'loadFavorite', label: 'Load selected favorite', run: e => {
             if (e.repeat) return;
             document.getElementById('mv-views-btn').click();
             document.getElementById('mv-load-view').click();
         } },
+        { id: 'smartLayout', label: 'Toggle Smart layout', run: () => toggleSmartLayout() },
+        { id: 'queuePicker', label: 'Choose a video', run: () => document.getElementById('mv-queue-btn').click() },
         { id: 'settings', label: 'Open player settings', run: () => openSettingsModal() },
         { id: 'shortcuts', label: 'Edit keybinds', run: () => openSettingsModal('Shortcuts') },
     ];
@@ -891,7 +893,7 @@
     // plain buttons are deliberately NOT excluded — the big play button covers a
     // cell's center, and middle/right-clicking it should still fire the shortcut
     // (left-clicks are ignored by the dispatcher via e.button === 0).
-    const MOUSE_BIND_EXCLUDE = 'a, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel, #mv-views';
+    const MOUSE_BIND_EXCLUDE = 'a, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel, #mv-views, #mv-queue';
     const MOUSE_LABELS = { Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click', Mouse3: 'Mouse Back', Mouse4: 'Mouse Forward' };
 
     // The cell a shortcut should act on: the click target's cell for mouse
@@ -1050,6 +1052,7 @@
             directPlay: saved.directPlay ?? false,
             quality: { ...DEFAULT_QUALITY, ...(saved.quality || {}) },
             focusMode: saved.focusMode ?? false,
+            smartLayout: saved.smartLayout === true,
             wheelSeek: saved.wheelSeek ?? false,
             invertWheelSeek: saved.invertWheelSeek ?? false,
             // Initial gain applied to every cell (0–2 → 0–200%). sashi: 100% is
@@ -1082,13 +1085,18 @@
 
     function applyFocusMode(enabled) {
         document.body.classList.toggle('mv-focus', enabled);
+        document.body.classList.toggle('mv-smart', playerSettings.smartLayout);
         document.getElementById('mv-focus-btn')?.classList.toggle('active', enabled);
-        if (enabled) {
-            applyJustifiedLayout();
-        } else {
-            clearJustifiedLayout();
-            detectAndApplyOrientation();
-        }
+        const smart = document.getElementById('mv-smart-btn');
+        smart?.setAttribute('aria-pressed', String(playerSettings.smartLayout));
+        if (!enabled && !playerSettings.smartLayout) clearJustifiedLayout();
+        detectAndApplyOrientation();
+    }
+
+    function toggleSmartLayout() {
+        playerSettings.smartLayout = !playerSettings.smartLayout;
+        savePlayerSettings();
+        applyFocusMode(playerSettings.focusMode);
     }
 
     function toggleFocusMode() {
@@ -1529,15 +1537,17 @@
             });
             const data = await res.json();
             const scene = data?.data?.findScene;
-            if (!scene) return;
+            if (!res.ok || data.errors?.length || !scene) return false;
             let title = scene.title;
             if (!title) {
                 const path = scene.files?.[0]?.path;
                 title = path ? path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : String(id);
             }
             scenes[id] = { id, title, oCount: scene.o_counter ?? 0, duration: scene.files?.[0]?.duration ?? null, streams: parseStreams(scene.sceneStreams) };
+            return true;
         } catch {
             if (!scenes[id]) scenes[id] = { id, title: String(id), streams: {} };
+            return false;
         }
     }
 
@@ -2004,7 +2014,7 @@
     }
 
     function detectAndApplyOrientation() {
-        if (playerSettings.focusMode) {
+        if (playerSettings.focusMode || playerSettings.smartLayout) {
             applyJustifiedLayout();
             return;
         }
@@ -2053,6 +2063,7 @@
                 && (view.positions === undefined || (Array.isArray(view.positions)
                     && view.positions.length === view.scenes.length
                     && view.positions.every(time => Number.isFinite(time) && time >= 0)))
+                && (view.smartLayout === undefined || typeof view.smartLayout === 'boolean')
                 && Array.isArray(view.sizes) && view.sizes.length === view.scenes.length
                 && view.sizes.every(size => size === null || (Array.isArray(size) && size.length === 2
                     && size.every(value => value === null || (Number.isInteger(value) && value >= 10 && value <= 100)))));
@@ -2064,14 +2075,25 @@
         rouletteBusy = true;
         refreshUndoButton();
         try {
+            const expected = resolvedRaw;
+            const available = await Promise.all(view.scenes.map(fetchSceneMeta));
+            if (!available.every(Boolean)) throw new Error('A saved video is unavailable. Your queue was kept.');
             const result = await mutateConfigQueue(items =>
-                JSON.stringify(items) === resolvedRaw ? view.scenes : null
+                JSON.stringify(items) === expected ? view.scenes : null
             );
             if (!result) {
-                if (result === null) await resyncFromCache();
+                if (result === null) {
+                    await resyncFromCache();
+                    throw new Error('The queue changed. Load the favorite again to replace it.');
+                }
                 return false;
             }
             paneSizes = view.sizes;
+            if (typeof view.smartLayout === 'boolean') {
+                playerSettings.smartLayout = view.smartLayout;
+                savePlayerSettings();
+                applyFocusMode(playerSettings.focusMode);
+            }
             favoritePositions = view.positions
                 ? new Map(view.scenes.map((id, index) => [id, view.positions[index]]))
                 : null;
@@ -2079,7 +2101,7 @@
                 if (favoritePositions) {
                     Array.from(document.getElementById('mv-grid').children).forEach(removeRenderedCell);
                 }
-                await resyncFromCache();
+                await resyncFromCache(result);
             } finally { favoritePositions = null; }
             return true;
         } finally {
@@ -2098,6 +2120,7 @@
         const paneControls = document.getElementById('mv-pane-sizes');
         const load = document.getElementById('mv-load-view');
         const remove = document.getElementById('mv-delete-view');
+        const update = document.getElementById('mv-update-view');
         const reset = document.getElementById('mv-reset-sizes');
         const grid = document.getElementById('mv-grid');
         const visibleScenes = () => Array.from(grid.children, cell => cell.dataset.sceneId);
@@ -2109,6 +2132,7 @@
                 : [new Option('No saved views', '')]));
             if (names.includes(selected)) select.value = selected;
             load.disabled = remove.disabled = !names.length;
+            update.disabled = !names.length || !visibleScenes().length;
             refreshPanes(true);
         }
 
@@ -2117,6 +2141,7 @@
             const visible = visibleScenes();
             form.querySelector('button').disabled = !visible.length;
             reset.disabled = !visible.length;
+            update.disabled = !select.value || !visible.length;
             const defaults = defaultPaneSize(grid);
             const signature = JSON.stringify([visible, defaults]);
             if (!force && (signature === paneSignature || paneControls.contains(document.activeElement))) return;
@@ -2145,6 +2170,7 @@
                         input.value = size;
                         paneSizes[index] ||= [null, null];
                         paneSizes[index][dimension] = size;
+                        if (playerSettings.smartLayout) toggleSmartLayout();
                         applyPaneSizes();
                     });
                     label.append(input);
@@ -2171,22 +2197,18 @@
             if (dialog.open) refreshPanes();
         }));
 
-        document.getElementById('mv-views-btn').addEventListener('click', () => {
+        function openViewDialog(save) {
             status.textContent = '';
             refresh(select.value);
-            dialog.showModal();
-        });
-        form.addEventListener('submit', event => {
-            event.preventDefault();
-            const name = new FormData(form).get('name').trim();
+            if (!dialog.open) dialog.showModal();
+            if (save) form.elements.name.focus();
+        }
+        document.getElementById('mv-views-btn').addEventListener('click', () => openViewDialog(false));
+        document.getElementById('mv-save-view-btn').addEventListener('click', () => openViewDialog(true));
+
+        function captureView(name) {
             const visible = visibleScenes();
-            if (!name || !visible.length) return;
-            const views = readViews();
-            if (views.some(view => view.name === name)) {
-                status.textContent = 'Choose a different name for this view.';
-                return;
-            }
-            const view = {
+            return {
                 name,
                 scenes: visible,
                 positions: Array.from(grid.children, cell => {
@@ -2194,12 +2216,34 @@
                     const time = video ? effectivePlayhead(video, cell.dataset.sceneId) : 0;
                     return Number.isFinite(time) ? Math.max(0, time) : 0;
                 }),
-                sizes: visible.map((_, index) => paneSizes[index] || null)
+                sizes: visible.map((_, index) => paneSizes[index] || null),
+                smartLayout: playerSettings.smartLayout
             };
-            if (!storeViews([...views, view])) return;
+        }
+
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            const name = new FormData(form).get('name').trim();
+            if (!name || !visibleScenes().length) return;
+            const views = readViews();
+            if (views.some(view => view.name === name)) {
+                status.textContent = 'Name already used. Select it and click Update favorite.';
+                return;
+            }
+            if (!storeViews([...views, captureView(name)])) return;
             form.reset();
             refresh(name);
-            status.textContent = 'View saved.';
+            status.textContent = 'Favorite saved.';
+        });
+        update.addEventListener('click', () => {
+            const name = select.value;
+            const views = readViews();
+            const index = views.findIndex(view => view.name === name);
+            if (index < 0 || !visibleScenes().length) return;
+            views[index] = captureView(name);
+            if (!storeViews(views)) return;
+            refresh(name);
+            status.textContent = 'Favorite updated.';
         });
         load.addEventListener('click', async () => {
             const view = readViews().find(item => item.name === select.value);
@@ -2208,6 +2252,8 @@
             try {
                 const restored = await restoreView(view);
                 status.textContent = restored ? 'View loaded.' : 'Could not load the view. Try again.';
+            } catch (error) {
+                status.textContent = error.message || 'Could not load the favorite.';
             } finally { refresh(view.name); }
         });
         remove.addEventListener('click', () => {
@@ -2219,6 +2265,143 @@
             paneSizes = [];
             applyPaneSizes();
             refresh(select.value);
+        });
+    }
+
+    async function chooseScene(targetId, id) {
+        if (rouletteBusy || queueRemoval || queueResync) throw new Error('The queue is busy. Try again.');
+        const target = queue.indexOf(targetId);
+        const source = queue.indexOf(id);
+        if (targetId && target < 0) throw new Error('That pane changed. Choose a destination again.');
+        if (target === source && source >= 0) return;
+        if (target < 0 && source >= 0) throw new Error('This video is already playing. Choose a pane to swap.');
+        rouletteBusy = true;
+        refreshUndoButton();
+        try {
+            const expected = resolvedRaw;
+            if (source < 0 && !await fetchSceneMeta(id)) throw new Error('This video is unavailable.');
+            const result = await mutateConfigQueue(items => {
+                if (JSON.stringify(items) !== expected) return null;
+                const slot = rawSlots[target];
+                if (source >= 0) {
+                    const from = rawSlots[source];
+                    [items[slot], items[from]] = [items[from], items[slot]];
+                } else if (target >= 0) items[slot] = id;
+                else if (items.length < 16) items.push(id);
+                else return null;
+                return items;
+            });
+            if (result === null) {
+                await resyncFromCache();
+                throw new Error('The queue changed or is full. Choose again.');
+            }
+            if (!result) throw new Error('Could not save the queue. Try again.');
+            resolvedRaw = JSON.stringify(result);
+            if (source >= 0) [queue[target], queue[source]] = [queue[source], queue[target]];
+            else if (target >= 0) {
+                filterBackedCells.delete(queue[target]);
+                queue[target] = id;
+            } else {
+                queue.push(id);
+                rawSlots.push(result.length - 1);
+            }
+            setUndoRoll(null);
+            render();
+        } finally {
+            rouletteBusy = false;
+            refreshUndoButton();
+            flushDeferredQueueSync();
+            flushDeferredAdvances();
+        }
+    }
+
+    function setupQueuePicker() {
+        const dialog = document.getElementById('mv-queue');
+        const grid = document.getElementById('mv-grid');
+        const target = document.getElementById('mv-queue-target');
+        const form = document.getElementById('mv-search-scenes');
+        const playing = document.getElementById('mv-queued-scenes');
+        const results = document.getElementById('mv-search-results');
+        const status = document.getElementById('mv-queue-status');
+        let search;
+        let choosing = false;
+
+        function choice(id, label) {
+            const item = document.createElement('li');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = label;
+            button.addEventListener('click', async () => {
+                if (choosing) return;
+                choosing = true;
+                try {
+                    await chooseScene(target.value, id);
+                    dialog.close();
+                } catch (error) {
+                    status.textContent = error.message;
+                } finally { choosing = false; }
+            });
+            item.append(button);
+            return item;
+        }
+
+        function refresh(preferred = target.value) {
+            const options = queue.map((id, index) => new Option(
+                `Pane ${index + 1} · ${scenes[id]?.title || id}`, id));
+            if (JSON.parse(resolvedRaw || '[]').length < 16) options.push(new Option('Add a pane', ''));
+            target.replaceChildren(...options);
+            if (options.some(option => option.value === preferred)) target.value = preferred;
+            playing.replaceChildren(...queue.map((id, index) =>
+                choice(id, `Pane ${index + 1} · ${scenes[id]?.title || id}`)));
+            if (!queue.length) playing.textContent = 'The queue is empty.';
+        }
+
+        function open(id) {
+            closeMenuPanel();
+            refresh(id ?? queue[0] ?? '');
+            status.textContent = '';
+            if (!dialog.open) dialog.showModal();
+        }
+
+        document.getElementById('mv-queue-btn').addEventListener('click', () => open());
+        grid.addEventListener('click', event => {
+            const button = event.target.closest('.mv-choose-pane');
+            if (button) open(button.closest('.mv-cell').dataset.sceneId);
+        });
+        grid.addEventListener('mv-wall-rendered', () => { if (dialog.open) refresh(); });
+        dialog.addEventListener('close', () => {
+            search?.abort();
+            form.reset();
+            results.replaceChildren();
+        });
+        form.addEventListener('submit', async event => {
+            event.preventDefault();
+            const q = form.elements.query.value.trim();
+            if (!q) return;
+            search?.abort();
+            const request = new AbortController();
+            search = request;
+            results.replaceChildren();
+            status.textContent = 'Searching…';
+            try {
+                const response = await fetch('/graphql', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: request.signal,
+                    body: JSON.stringify({
+                        query: 'query SearchScenes($filter: FindFilterType) { findScenes(filter: $filter) { scenes { id title } } }',
+                        variables: { filter: { q, per_page: 24 } }
+                    })
+                });
+                const data = await response.json();
+                const matches = data?.data?.findScenes?.scenes;
+                if (!response.ok || data.errors?.length || !Array.isArray(matches)) throw new Error();
+                if (request.signal.aborted) return;
+                results.replaceChildren(...matches.map(scene => choice(String(scene.id), scene.title || `Scene ${scene.id}`)));
+                status.textContent = matches.length ? '' : 'No scenes found.';
+            } catch {
+                if (!request.signal.aborted) status.textContent = 'Could not search Stash. Try again.';
+            }
         });
     }
 
@@ -2367,7 +2550,7 @@
     }
 
     function applyJustifiedLayout() {
-        if (!playerSettings.focusMode) return;
+        if (!playerSettings.focusMode && !playerSettings.smartLayout) return;
         const grid = document.getElementById('mv-grid');
         if (!grid) return;
         const cells = [...grid.querySelectorAll('.mv-cell')];
@@ -2959,7 +3142,15 @@
 
             if (isFilterBacked) controls.append(oBtn, audioBtn, removeBtn);
             else                controls.append(loopBadge, oBtn, loopBtn, audioBtn, removeBtn);
-            overlay.append(sceneTitleEl, centerControls, controls);
+            const paneBar = document.createElement('div');
+            paneBar.className = 'mv-pane-bar';
+            const choose = document.createElement('button');
+            choose.type = 'button';
+            choose.textContent = 'Choose';
+            choose.title = 'Choose a video for this pane';
+            choose.className = 'mv-choose-pane';
+            paneBar.append(sceneTitleEl, choose);
+            overlay.append(centerControls, controls);
 
             // Volume popup (direct child of cell, not overlay)
             const popup = document.createElement('div');
@@ -3168,7 +3359,7 @@
                 else scheduleWheelSeek(id, video, delta);
             }, { passive: false });
 
-            cell.append(video, loadingDiv, overlay, popup, seekbar);
+            cell.append(video, loadingDiv, overlay, paneBar, popup, seekbar);
 
             cell.addEventListener('mouseleave', () => {
                 if (openPopupId === id) closeAllPopups();
@@ -3497,8 +3688,7 @@
 
         rouletteSection.append(heading, sliderRow, modeRow, hint, rollBtn);
         panel.appendChild(rouletteSection);
-        [['Favorite views', () => document.getElementById('mv-views-btn').click()],
-         ['Edit keybinds', () => openSettingsModal('Shortcuts')],
+        [['Edit keybinds', () => openSettingsModal('Shortcuts')],
          ['Player settings', () => openSettingsModal()]].forEach(([label, run]) => {
             const button = document.createElement('button');
             button.className = 'mv-menu-roll-btn';
@@ -3555,6 +3745,8 @@
         document.getElementById('mv-fullscreen-btn').addEventListener('click', toggleFullscreen);
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
         setupViews();
+        setupQueuePicker();
+        document.getElementById('mv-smart-btn').addEventListener('click', toggleSmartLayout);
         document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);
         document.getElementById('mv-undo-roll-btn').addEventListener('click', undoLastRoll);
         document.addEventListener('fullscreenchange', applyFullscreenIcon);
@@ -3562,7 +3754,7 @@
         document.addEventListener('keydown', e => {
             // Let modified chords (Ctrl/Cmd/Alt) and typing in fields pass through,
             // and stand down while a rebind capture is grabbing the next key.
-            if (keybindCaptureActive || document.getElementById('mv-views').open) return;
+            if (keybindCaptureActive || document.getElementById('mv-views').open || document.getElementById('mv-queue')?.open) return;
             const tag = e.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
             const binding = normalizeKey(e.key);
@@ -3598,7 +3790,7 @@
             if (rightBound) e.preventDefault();
         });
         window.addEventListener('resize', () => {
-            if (playerSettings.focusMode) applyJustifiedLayout();
+            if (playerSettings.focusMode || playerSettings.smartLayout) applyJustifiedLayout();
         });
 
         document.addEventListener('mousemove', e => { updateSeekFill(e); updateLoopDrag(e); queueSeekZone(e); });

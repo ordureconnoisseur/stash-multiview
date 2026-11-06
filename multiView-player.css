@@ -142,43 +142,84 @@ html, body {
     padding: 3px;
 }
 
-#mv-views-btn { width: auto; padding-inline: 6px; }
-#mv-views {
+#mv-topbar .mv-text-btn {
+    width: auto;
+    padding-inline: 10px;
+    color: var(--mv-text);
+    white-space: nowrap;
+    font-weight: 600;
+}
+#mv-topbar #mv-save-view-btn,
+#mv-topbar #mv-smart-btn[aria-pressed="true"] {
+    color: #ffbf94;
+    border-color: var(--mv-accent);
+    background: var(--mv-accent-tint);
+}
+#mv-topbar #mv-title { white-space: nowrap; min-width: max-content; }
+
+#mv-views, #mv-queue {
     background: var(--mv-chrome-bg);
     color: var(--mv-text);
     border: 1px solid var(--mv-border);
-    border-radius: 8px;
-    width: min(420px, 90vw);
-    max-height: 80vh;
-    padding: 16px;
+    border-radius: 12px;
+    width: min(470px, calc(100vw - 24px));
+    max-height: calc(100dvh - 64px);
+    padding: 20px;
     margin: 52px 12px auto auto;
+    box-shadow: 0 16px 48px #0009;
+    overflow: auto;
 }
-#mv-views::backdrop { background: rgb(0 0 0 / 18%); }
-#mv-views h2, #mv-views h3 { margin: 0 0 8px; }
-#mv-views p { font-size: 13px; }
-#mv-views input, #mv-views select, #mv-views button {
+:is(#mv-views, #mv-queue)::backdrop { background: #0008; }
+:is(#mv-views, #mv-queue) h2 { font-size: 20px; margin: 2px 0 14px; }
+:is(#mv-views, #mv-queue) h3 { font-size: 14px; margin: 12px 0 6px; }
+:is(#mv-views, #mv-queue) p { margin: 8px 0; color: #c0c0c0; font-size: 13px; }
+:is(#mv-views, #mv-queue) [role="status"]:empty { display: none; }
+:is(#mv-views, #mv-queue) label { font-size: 13px; }
+:is(#mv-views, #mv-queue) :is(input, select, button) {
     color: inherit;
     background: var(--mv-cell-bg);
-    border: 1px solid var(--mv-border);
-    border-radius: 4px;
-    padding: 4px 6px;
+    border: 1px solid #505050;
+    border-radius: 6px;
+    padding: 6px 9px;
+    min-height: 32px;
     max-width: 100%;
 }
-#mv-views button { cursor: pointer; }
-#mv-views button:disabled { opacity: .5; cursor: default; }
+:is(#mv-views, #mv-queue) button { cursor: pointer; }
+:is(#mv-views, #mv-queue) button:enabled:hover { border-color: var(--mv-accent); }
+:is(#mv-views, #mv-queue) button:disabled { opacity: .5; cursor: default; }
+:is(#mv-topbar, #mv-grid, #mv-views, #mv-queue) :focus-visible {
+    outline: 2px solid var(--mv-accent);
+    outline-offset: 1px;
+}
 .mv-views-close { float: right; }
-#mv-save-view, .mv-views-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+#mv-save-view, #mv-search-scenes, .mv-views-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 8px;
+    margin: 8px 0;
+}
+:is(#mv-save-view, #mv-search-scenes) label { flex: 1; min-width: 140px; }
+:is(#mv-save-view, #mv-search-scenes) input, #mv-queue-target, #mv-saved-views {
+    display: block;
+    width: 100%;
+}
+#mv-views details { border-top: 1px solid var(--mv-border); padding-top: 10px; margin-top: 14px; }
+#mv-views summary { cursor: pointer; }
+.mv-choice-list { display: grid; gap: 4px; max-height: 24vh; overflow: auto; list-style: none; font-size: 13px; }
+.mv-choice-list:not(:empty) { margin: 6px 0 12px; }
+.mv-choice-list button { width: 100%; text-align: left; }
 #mv-pane-sizes fieldset { margin-bottom: 8px; border: 1px solid var(--mv-border); }
 #mv-pane-sizes label { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; }
 #mv-pane-sizes input { width: 65px; }
-body:not(.mv-focus) #mv-grid[data-custom-sizes] {
+body:not(.mv-focus):not(.mv-smart) #mv-grid[data-custom-sizes] {
     display: flex;
     flex-wrap: wrap;
     align-content: flex-start;
     gap: 0;
     overflow: auto;
 }
-body:not(.mv-focus) #mv-grid[data-custom-sizes] > .mv-cell {
+body:not(.mv-focus):not(.mv-smart) #mv-grid[data-custom-sizes] > .mv-cell {
     flex: 0 0 var(--mv-pane-width);
     height: var(--mv-pane-height);
     min-width: min(120px, 100%);
@@ -228,15 +269,41 @@ body:not(.mv-focus) #mv-grid[data-custom-sizes] > .mv-cell {
     transition: opacity 0.2s;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-end;
     padding: 8px;
     pointer-events: none;
     z-index: 20;
 }
 
-.mv-cell:hover .mv-cell-overlay {
+.mv-cell:hover .mv-cell-overlay,
+.mv-cell:focus-within .mv-cell-overlay {
     opacity: 1;
 }
+
+.mv-pane-bar {
+    position: absolute;
+    inset: 4px 4px auto;
+    z-index: 21;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 4px;
+    pointer-events: none;
+}
+.mv-pane-bar > * {
+    border-radius: 5px;
+    background: #141414e8;
+    color: #fff;
+    padding: 4px 6px;
+    pointer-events: auto;
+}
+.mv-choose-pane {
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid #666;
+    cursor: pointer;
+}
+.mv-choose-pane:hover { border-color: var(--mv-accent); }
 
 .mv-cell-title {
     font-size: 11px;
@@ -386,7 +453,7 @@ body:not(.mv-focus) #mv-grid[data-custom-sizes] > .mv-cell {
     #mv-grid[data-custom-sizes] .mv-cell-btn { width: 23px; height: 23px; padding: 0 2px; }
     #mv-grid[data-custom-sizes] .mv-o-btn { width: auto; min-width: 23px; gap: 2px; }
     #mv-grid[data-custom-sizes] .mv-o-btn span { max-width: 26px; overflow: hidden; }
-    body:not(.mv-focus) #mv-grid[data-custom-sizes] .mv-cell .mv-vol-popup { bottom: 30px; max-height: calc(100% - 32px); }
+    body:not(.mv-focus):not(.mv-smart) #mv-grid[data-custom-sizes] .mv-cell .mv-vol-popup { bottom: 30px; max-height: calc(100% - 32px); }
 }
 
 /* ── Filter card title label ───────────────────────────────────────────────── */
@@ -604,7 +671,7 @@ body:not(.mv-focus) #mv-grid[data-custom-sizes] > .mv-cell {
     backdrop-filter: blur(6px);
 }
 
-body:not(.mv-focus) #mv-grid[data-custom-sizes] .mv-vol-popup {
+body:not(.mv-focus):not(.mv-smart) #mv-grid[data-custom-sizes] .mv-vol-popup {
     max-height: calc(100% - 46px);
     overflow: auto;
 }
@@ -694,10 +761,10 @@ body:not(.mv-focus) #mv-grid[data-custom-sizes] .mv-vol-popup {
    buttons and video, so the cursor never actually hid. Force it across the
    whole subtree while idle; any mousemove clears mv-idle and restores the real
    cursors instantly. An open volume popup is exempt so its controls stay usable. */
-body.mv-idle, body.mv-idle * { cursor: none !important; }
+body.mv-idle .mv-cell video { cursor: none; }
 body.mv-idle .mv-cell.mv-popup-open .mv-vol-popup,
 body.mv-idle .mv-cell.mv-popup-open .mv-vol-popup * { cursor: auto !important; }
-body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-cell-overlay {
+body.mv-idle .mv-cell:hover:not(.mv-popup-open):not(:focus-within) .mv-cell-overlay {
     opacity: 0;
     pointer-events: none;
 }
@@ -1156,15 +1223,13 @@ body.mv-focus #mv-topbar {
     opacity: 0;
     transition: opacity 0.25s;
 }
-body.mv-focus #mv-topbar:hover {
+body.mv-focus #mv-topbar:hover,
+body.mv-focus #mv-topbar:focus-within {
     opacity: 1;
 }
-body.mv-focus #mv-grid {
-    top: 0;
-    display: block;
-    padding: 0;
-}
-body.mv-focus .mv-cell {
+body.mv-focus #mv-grid { top: 0; }
+body:is(.mv-focus, .mv-smart) #mv-grid { display: block; padding: 0; }
+body:is(.mv-focus, .mv-smart) .mv-cell {
     position: absolute;
 }
 body.mv-focus .mv-cell video {

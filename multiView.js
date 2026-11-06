@@ -59,13 +59,16 @@
     }
 
     async function writeConfigQueue(q) {
-        await fetch('/graphql', {
+        const response = await fetch('/graphql', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: 'mutation($input: Map!) { configurePlugin(plugin_id: "multiView", input: $input) }',
                 variables: { input: { queue: JSON.stringify(q) } }
             })
         });
+        if (!response.ok || (await response.json()).errors?.length) {
+            throw new Error('Could not save the MultiView queue');
+        }
     }
 
     // Reflect a queue into the local cache + refresh all UI.
@@ -112,17 +115,21 @@
             try { items = await fetchConfigQueue(); }
             catch { return; }
             const next = mutator(items.slice());
-            if (next === null) { reflectQueue(items); return; }
+            if (next === null) {
+                reflectQueue(items);
+                return !('verify' in opts) || items.includes(opts.verify) === opts.want;
+            }
             try { await writeConfigQueue(next); }
-            catch { return; }
-            if (!('verify' in opts)) { reflectQueue(next); return; }
+            catch { reflectQueue(items); return false; }
+            if (!('verify' in opts)) { reflectQueue(next); return true; }
             let after;
             try { after = await fetchConfigQueue(); }
-            catch { reflectQueue(next); return; }
-            if (after.includes(opts.verify) === opts.want) { reflectQueue(after); return; }
+            catch { reflectQueue(next); return false; }
+            if (after.includes(opts.verify) === opts.want) { reflectQueue(after); return true; }
             // Clobbered — loop and re-apply against the now-current queue.
         }
         try { reflectQueue(await fetchConfigQueue()); } catch { /* keep cache */ }
+        return false;
     }
 
     function getSceneCount() {
@@ -192,12 +199,17 @@
         const q = q0.slice();
         if (want) q.push(id); else { const i = q.indexOf(id); if (i >= 0) q.splice(i, 1); }
         reflectQueue(q);
-        // Apply the set intent to the live config, verifying it stuck.
-        mutateConfigQueue(items => {
+        return setSceneQueued(id, want);
+    }
+
+    function setSceneQueued(id, want) {
+        return mutateConfigQueue(items => {
             const present = items.includes(id);
-            if (want === present) return null;             // already satisfied
-            if (want) { if (items.length >= MAX_QUEUE) return null; items.push(id); }
-            else { const k = items.indexOf(id); if (k >= 0) items.splice(k, 1); }
+            if (want === present) return null;
+            if (want) {
+                if (items.length >= MAX_QUEUE) return null;
+                items.push(id);
+            } else items.splice(items.indexOf(id), 1);
             return items;
         }, { verify: id, want });
     }
@@ -296,28 +308,60 @@
     // ?"??"? Scene detail page button ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
     function injectScenePageButton() {
-        const match = window.location.pathname.match(/^\/scenes\/(\d+)/);
-        if (!match || window.location.pathname.includes('/edit')) return;
-        const id = match[1];
-        if (document.getElementById('mv-scene-btn')) return;
+        const match = window.location.pathname.match(/^\/scenes\/(\d+)\/?$/);
+        const actions = document.getElementById('mv-scene-actions');
+        const id = match?.[1];
+        if (actions && actions.dataset.sceneId === id) return;
+        actions?.remove();
+        if (!id) return;
 
-        const toolbar = document.querySelector('.scene-toolbar .scene-toolbar-group:last-child, .scene-toolbar');
+        const toolbar = document.querySelector('.scene-toolbar .scene-toolbar-group:last-child')
+            || document.querySelector('.scene-toolbar');
         if (!toolbar) return;
 
-        const btn = document.createElement('button');
-        btn.id = 'mv-scene-btn';
-        btn.className = 'mv-scene-page-btn btn btn-secondary' + (isQueued(id) ? ' active' : '');
-        btn.title = isQueued(id) ? 'Remove from Multiview' : 'Add to Multiview';
-        btn.innerHTML = GRID_ICON_SVG;
+        const group = document.createElement('span');
+        group.id = 'mv-scene-actions';
+        group.dataset.sceneId = id;
+        const queueButton = document.createElement('button');
+        queueButton.id = 'mv-scene-btn';
+        queueButton.type = 'button';
+        queueButton.className = 'btn btn-secondary';
 
-        btn.addEventListener('click', () => {
-            toggleScene(id);
-            const queued = isQueued(id);
-            btn.classList.toggle('active', queued);
-            btn.title = queued ? 'Remove from Multiview' : 'Add to Multiview';
+        const play = document.createElement('button');
+        play.type = 'button';
+        play.className = 'btn btn-primary';
+        play.textContent = 'Play in MultiView';
+        const status = document.createElement('span');
+        status.setAttribute('role', 'status');
+        queueButton.addEventListener('click', async () => {
+            queueButton.disabled = play.disabled = true;
+            status.textContent = '';
+            try {
+                if (!await setSceneQueued(id, !isQueued(id))) {
+                    status.textContent = 'Could not update the queue. It may be full.';
+                }
+            } finally { queueButton.disabled = play.disabled = false; }
+        });
+        play.addEventListener('click', async () => {
+            const tab = window.open('', '_blank');
+            if (tab) tab.opener = null;
+            queueButton.disabled = play.disabled = true;
+            status.textContent = 'Queuing…';
+            try {
+                if (!await setSceneQueued(id, true)) throw new Error();
+                const url = PLAYER_URL + '?t=' + Date.now();
+                if (!tab) window.location.assign(url);
+                else if (!tab.closed) tab.location.href = url;
+                status.textContent = 'Queued.';
+            } catch {
+                tab?.close();
+                status.textContent = 'Could not queue this scene. Check the queue and retry.';
+            } finally { queueButton.disabled = play.disabled = false; }
         });
 
-        toolbar.appendChild(btn);
+        group.append(queueButton, play, status);
+        toolbar.appendChild(group);
+        updateAllButtons();
     }
 
     // ?"??"? Update all existing card buttons ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
@@ -334,7 +378,9 @@
             if (m) {
                 const queued = isQueued(m[1]);
                 sceneBtn.classList.toggle('active', queued);
-                sceneBtn.title = queued ? 'Remove from Multiview' : 'Add to Multiview';
+                sceneBtn.textContent = queued ? 'Queued' : 'Queue';
+                sceneBtn.setAttribute('aria-pressed', String(queued));
+                sceneBtn.title = queued ? 'Remove from MultiView queue' : 'Add to MultiView queue';
             }
         }
     }

@@ -69,21 +69,17 @@ body:not(.mv-picking-mode) .mv-add-btn {
 
 /* ── Scene page button ─────────────────────────────────────────────────────── */
 
-.mv-scene-page-btn {
+#mv-scene-actions {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
+    gap: 6px;
 }
-
-.mv-scene-page-btn svg {
-    width: 1em;
-    height: 1em;
-}
-
-.mv-scene-page-btn.active {
-    background-color: var(--mv-accent) !important;
-    border-color: var(--mv-accent) !important;
-    color: #fff !important;
+#mv-scene-actions [role="status"]:empty { display: none; }
+#mv-scene-btn.active {
+    background-color: var(--mv-accent);
+    border-color: var(--mv-accent);
+    color: #fff;
 }
 
 /* ── Standalone picking toggle (shown when no pagination controls exist) ───── */

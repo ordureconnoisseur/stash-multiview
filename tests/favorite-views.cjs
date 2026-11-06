@@ -26,12 +26,20 @@ let stored = JSON.stringify([view]);
 const actions = [];
 let videos = [];
 let lateStarts = [];
+let unavailable;
+let liveQueue = [];
+let writes = 0;
 const context = vm.createContext({
     console,
     recordAction: id => actions.push(id),
     localStorage: { getItem: () => stored },
     document: { getElementById: () => ({ children: [], open: false }) },
-    mutateConfigQueue: async callback => callback([]),
+    fetchSceneMeta: async id => id !== unavailable,
+    mutateConfigQueue: async callback => {
+        const result = callback(liveQueue);
+        if (result) writes++;
+        return result;
+    },
     refreshUndoButton() {},
     flushDeferredQueueSync() {},
     flushDeferredAdvances() {},
@@ -98,7 +106,16 @@ vm.runInContext(`
     stored = JSON.stringify([legacy]);
     assert.equal(context.readViews().length, 1);
 
-    await context.restoreView(view);
+    unavailable = '2';
+    await assert.rejects(context.restoreView(view), /saved video is unavailable/);
+    assert.equal(writes, 0, 'an unavailable saved video leaves the queue untouched');
+    unavailable = undefined;
+    liveQueue = ['3'];
+    await assert.rejects(context.restoreView(view), /queue changed/);
+    assert.equal(writes, 0, 'an intervening queue edit is preserved');
+    liveQueue = [];
+
+    assert.equal(await context.restoreView(view), true);
     lateStarts.forEach(start => start());
     videos.forEach(video => video.dispatchEvent(new Event('loadedmetadata')));
     assert.deepEqual(videos.map(video => video.currentTime), [39, 70],

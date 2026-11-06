@@ -23,7 +23,7 @@
             } catch (e) { /* localStorage may be disabled — fall through */ }
         })();
     </script>
-    <link rel="stylesheet" href="multiView-player.css?v=navigation1">
+    <link rel="stylesheet" href="multiView-player.css?v=dashboard1">
     <script>
         /* Optional theme stylesheet — host theme can write a URL pointing
            at its own multiview-player overlay CSS. We append the link
@@ -74,11 +74,12 @@
     </button>
     <button id="mv-undo-roll-btn" class="mv-topbar-icon-btn" type="button"
             title="Undo last roll (Shift+R)" aria-keyshortcuts="Shift+R" disabled>↶ Undo</button>
-    <button id="mv-roulette-btn" class="mv-topbar-icon-btn" title="Menu">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M13.763,0 L2.178,0 C0.998,0 0.043,0.966 0.043,2.155 L0.043,13.845 C0.043,15.034 0.998,15.999 2.178,15.999 L13.763,15.999 C14.944,15.999 15.899,15.034 15.899,13.845 L15.899,2.155 C15.898,0.966 14.943,0 13.763,0 Z M4.002,6.153 C2.856,6.153 1.927,5.202 1.927,4.03 C1.927,2.858 2.856,1.907 4.002,1.907 C5.148,1.907 6.078,2.858 6.078,4.03 C6.078,5.202 5.148,6.153 4.002,6.153 Z M12.002,14.153 C10.856,14.153 9.927,13.202 9.927,12.03 C9.927,10.858 10.856,9.907 12.002,9.907 C13.148,9.907 14.078,10.858 14.078,12.03 C14.078,13.202 13.148,14.153 12.002,14.153 Z M8.002,10.153 C6.856,10.153 5.927,9.202 5.927,8.03 C5.927,6.858 6.856,5.907 8.002,5.907 C9.148,5.907 10.078,6.858 10.078,8.03 C10.078,9.202 9.148,10.153 8.002,10.153 Z"/></svg>
-    </button>
+    <button id="mv-roulette-btn" class="mv-topbar-icon-btn mv-text-btn" type="button" title="Roll options">Roll</button>
 
-    <button id="mv-views-btn" class="mv-topbar-icon-btn" type="button" aria-label="Favorite view" title="Save or load favorite videos and timestamps">★ Favorite view</button>
+    <button id="mv-queue-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Queue</button>
+    <button id="mv-smart-btn" class="mv-topbar-icon-btn mv-text-btn" type="button" aria-pressed="false">Smart layout</button>
+    <button id="mv-save-view-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Save view</button>
+    <button id="mv-views-btn" class="mv-topbar-icon-btn mv-text-btn" type="button">Favorites</button>
     <button id="mv-settings-btn" class="mv-topbar-icon-btn" title="Player Settings">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" aria-hidden="true"><path fill="currentColor" d="M495.9 166.6c3.2 8.7 .5 18.4-6.4 24.6l-43.3 39.4c1.1 8.3 1.7 16.8 1.7 25.4s-.6 17.1-1.7 25.4l43.3 39.4c6.9 6.2 9.6 15.9 6.4 24.6c-4.4 11.9-9.7 23.3-15.8 34.3l-4.7 8.1c-6.6 11-14 21.4-22.1 31.2c-5.9 7.2-15.7 9.6-24.5 6.8l-55.7-17.7c-13.4 10.3-28.2 18.9-44 25.4l-12.5 57.1c-2 9.1-9 16.3-18.2 17.8c-13.8 2.3-28 3.5-42.5 3.5s-28.7-1.2-42.5-3.5c-9.2-1.5-16.2-8.7-18.2-17.8l-12.5-57.1c-15.8-6.5-30.6-15.1-44-25.4L83.1 425.9c-8.8 2.8-18.6 .3-24.5-6.8c-8.1-9.8-15.5-20.2-22.1-31.2l-4.7-8.1c-6.1-11-11.4-22.4-15.8-34.3c-3.2-8.7-.5-18.4 6.4-24.6l43.3-39.4C64.6 273.1 64 264.6 64 256s.6-17.1 1.7-25.4L22.4 191.2c-6.9-6.2-9.6-15.9-6.4-24.6c4.4-11.9 9.7-23.3 15.8-34.3l4.7-8.1c6.6-11 14-21.4 22.1-31.2c5.9-7.2 15.7-9.6 24.5-6.8l55.7 17.7c13.4-10.3 28.2-18.9 44-25.4l12.5-57.1c2-9.1 9-16.3 18.2-17.8C227.3 1.2 241.5 0 256 0s28.7 1.2 42.5 3.5c9.2 1.5 16.2 8.7 18.2 17.8l12.5 57.1c15.8 6.5 30.6 15.1 44 25.4l55.7-17.7c8.8-2.8 18.6-.3 24.5 6.8c8.1 9.8 15.5 20.2 22.1 31.2l4.7 8.1c6.1 11 11.4 22.4 15.8 34.3zM256 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160z"/></svg>
     </button>
@@ -96,13 +97,31 @@
     <div class="mv-views-actions">
         <select id="mv-saved-views" aria-label="Saved views"></select>
         <button id="mv-load-view" type="button">Load favorite</button>
-        <button id="mv-delete-view" type="button">Delete view</button>
+        <button id="mv-update-view" type="button">Update favorite</button>
+        <button id="mv-delete-view" type="button">Delete favorite</button>
     </div>
     <p id="mv-view-status" role="status"></p>
-    <h3>Pane sizes</h3>
-    <p>Percent of the player area. Panes wrap as needed and have a minimum size for controls. Custom sizes apply outside Focus Mode.</p>
-    <div id="mv-pane-sizes"></div>
-    <button id="mv-reset-sizes" type="button">Reset sizes</button>
+    <details>
+        <summary>Manual pane sizes</summary>
+        <p>Editing a size switches off Smart layout. Focus Mode keeps its own layout.</p>
+        <div id="mv-pane-sizes"></div>
+        <button id="mv-reset-sizes" type="button">Reset sizes</button>
+    </details>
+</dialog>
+
+<dialog id="mv-queue" aria-labelledby="mv-queue-title">
+    <form method="dialog"><button class="mv-views-close">Close</button></form>
+    <h2 id="mv-queue-title">Choose a video</h2>
+    <label>Destination <select id="mv-queue-target"></select></label>
+    <p>Choose a queued video to swap panes, or find a different video in Stash.</p>
+    <h3>Playing now</h3>
+    <ul id="mv-queued-scenes" class="mv-choice-list"></ul>
+    <form id="mv-search-scenes">
+        <label>Search library <input type="search" name="query" required></label>
+        <button type="submit">Search</button>
+    </form>
+    <p id="mv-queue-status" role="status"></p>
+    <ul id="mv-search-results" class="mv-choice-list"></ul>
 </dialog>
 
 <div id="mv-empty" style="display:none">
@@ -115,6 +134,6 @@
     <p>Nothing queued. <a href="/">Browse Stash</a> and press <strong>+</strong> to queue scenes, or use the dice button above to roll random.</p>
 </div>
 
-<script src="multiView-player.js?v=navigation1"></script>
+<script src="multiView-player.js?v=dashboard1"></script>
 </body>
 </html>
