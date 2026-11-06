@@ -309,6 +309,14 @@ body:not(.mv-smart) #mv-grid[data-custom-sizes] > .mv-cell {
     padding: 4px 6px;
     pointer-events: auto;
 }
+.mv-pane-info { min-width: 0; }
+.mv-pane-next-status {
+    display: block;
+    color: #ddd;
+    font-size: 10px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
 .mv-choose-pane {
     font-size: 11px;
     font-weight: 600;

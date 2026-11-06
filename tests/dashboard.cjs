@@ -172,3 +172,53 @@ assert.equal(cleared, 1, 'Focus clears automatic sizing when Smart is off');
 assert.equal(smartLayoutRuns, 0);
 vm.runInContext('playerSettings.smartLayout = true; applyFocusMode(true);', modes);
 assert.equal(smartLayoutRuns, 1, 'Smart still sizes panes with Focus on');
+
+const filterSearch = source.slice(source.indexOf('    async function findFilterScenes('),
+    source.indexOf('    async function resolveFilterSlot('));
+const advance = source.slice(source.indexOf('    async function advanceFilterCell('),
+    source.indexOf('    function seekToStart('));
+(async () => {
+    for (const [response, playable, expected, statusText] of [
+        [{ errors: [{ message: 'Stash unavailable' }] }, true, '2', 'Could not load next'],
+        [{ data: { findScenes: { scenes: [{ id: '1' }, { id: '2' }] } } }, true, '2', 'No other match'],
+        [{ data: { findScenes: { scenes: [{ id: '3' }] } } }, false, '2', 'Could not load next'],
+        [{ data: { findScenes: { scenes: [{ id: '3' }] } } }, true, '3', 'Loading next video']
+    ]) {
+        const status = { textContent: 'Auto-next' };
+        const video = {};
+        let lookups = 0;
+        let replays = 0;
+        let renders = 0;
+        const context = vm.createContext({
+            buildSceneFilter() {},
+            fetch: async () => {
+                lookups++;
+                return { ok: true, json: async () => response };
+            },
+            fetchSceneMeta: async () => playable,
+            render: () => { renders++; },
+            seekToStart: () => { replays++; },
+            document: { querySelector: () => ({ querySelector: selector => selector === 'video' ? video : status }) }
+        });
+        vm.runInContext(`
+            const queue = ['1', '2'];
+            const filterBackedCells = new Map([['2', { type: 'filter' }]]);
+            const unmutedIds = new Set();
+            const advancingCells = new Set();
+            const deferredAdvances = new Set();
+            const rouletteBusy = false, queueResync = null, undoSceneId = null;
+            ${filterSearch}
+            ${advance}
+        `, context);
+        await Promise.all([
+            vm.runInContext("advanceFilterCell('2')", context),
+            vm.runInContext("advanceFilterCell('2')", context)
+        ]);
+        assert.equal(lookups, 1, 'one pane has at most one next-video lookup in flight');
+        assert.equal(status.textContent, statusText);
+        assert.equal(vm.runInContext("queue.join(',')", context), '1,' + expected);
+        assert.equal(replays, expected === '2' ? 1 : 0);
+        assert.equal(renders, expected === '3' ? 1 : 0);
+    }
+    console.log('Auto-next replaces only its own pane and distinguishes missing matches from errors');
+})().catch(error => { console.error(error); process.exitCode = 1; });

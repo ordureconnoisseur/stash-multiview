@@ -101,6 +101,7 @@
     let queueRemoval = null;
     let queueSyncDeferred = false;
     const deferredAdvances = new Set();
+    const advancingCells = new Set();
     let undoRoll = null;
     let undoSceneId = null;
     let rouletteBusy = false;
@@ -514,14 +515,15 @@
                 })
             });
             const data = await res.json();
-            const list = data?.data?.findScenes?.scenes || [];
+            const list = data?.data?.findScenes?.scenes;
+            if (!res.ok || data.errors?.length || !Array.isArray(list)) return null;
             return list.map(scene => String(scene.id));
-        } catch { return []; }
+        } catch { return null; }
     }
 
     async function resolveFilterSlot(item, excluded) {
         const candidates = await findFilterScenes(item, excluded.size + 1);
-        return candidates.find(id => !excluded.has(id));
+        return candidates?.find(id => !excluded.has(id));
     }
 
     // Reuse matching live slots where possible and reserve all pinned scene IDs
@@ -612,41 +614,57 @@
 
     async function advanceFilterCell(id, manual = false) {
         const filterItem = filterBackedCells.get(id);
-        if (!filterItem) return;
-        if (rouletteBusy || queueResync) {
+        if (!filterItem || advancingCells.has(id)) return;
+        const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
+        const status = cell?.querySelector('.mv-pane-next-status');
+        const show = text => { if (status) status.textContent = text; };
+        const waitForQueue = () => {
+            if (!rouletteBusy && !queueResync) return false;
             if (!manual) deferredAdvances.add(id);
-            return;
-        }
-        const excluded = new Set(queue);
-        if (!manual && undoSceneId) excluded.add(undoSceneId);
-        const candidates = await findFilterScenes(filterItem, excluded.size + 1);
-        if (filterBackedCells.get(id) !== filterItem || !queue.includes(id)) return;
-        if (rouletteBusy || queueResync) {
-            if (!manual) deferredAdvances.add(id);
-            return;
-        }
-        const newId = candidates.find(candidate =>
-            !queue.includes(candidate) && (manual || candidate !== undoSceneId)
-        );
-        if (!newId) {
-            const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
+            show(manual ? 'Queue busy · retry Next' : 'Waiting for queue');
+            return true;
+        };
+        if (waitForQueue()) return;
+        const stillCurrent = () => filterBackedCells.get(id) === filterItem && queue.includes(id);
+        const available = candidate => !queue.includes(candidate) && (manual || candidate !== undoSceneId);
+
+        advancingCells.add(id);
+        show('Loading next video');
+        try {
+            const excluded = new Set(queue);
+            if (!manual && undoSceneId) excluded.add(undoSceneId);
+            const candidates = await findFilterScenes(filterItem, excluded.size + 1);
+            if (!stillCurrent() || waitForQueue()) return;
+            let unavailable = candidates === null;
+            for (const candidate of candidates || []) {
+                if (!available(candidate)) continue;
+                const playable = await fetchSceneMeta(candidate);
+                if (!stillCurrent() || waitForQueue()) return;
+                if (!playable) {
+                    unavailable = true;
+                    continue;
+                }
+                if (!available(candidate)) continue;
+                const slot = queue.indexOf(id);
+                replaceFilterScene(id, candidate, filterItem);
+                if (manual) {
+                    setUndoRoll(async () => {
+                        const current = queue[slot];
+                        if (filterBackedCells.get(current) !== filterItem || queue.includes(id)) return;
+                        replaceFilterScene(current, id, filterItem);
+                        await loadSceneMeta([id]);
+                        render();
+                    }, id);
+                }
+                render();
+                return;
+            }
+            show(unavailable ? 'Could not load next' : 'No other match');
             const video = cell?.querySelector('video');
             if (video) seekToStart(id, video);
-            return;
+        } finally {
+            advancingCells.delete(id);
         }
-        const slot = queue.indexOf(id);
-        replaceFilterScene(id, newId, filterItem);
-        if (manual) {
-            setUndoRoll(async () => {
-                const current = queue[slot];
-                if (filterBackedCells.get(current) !== filterItem || queue.includes(id)) return;
-                replaceFilterScene(current, id, filterItem);
-                await loadSceneMeta([id]);
-                render();
-            }, id);
-        }
-        await loadSceneMeta([newId]);
-        render();
     }
 
     function replaceFilterScene(id, newId, filterItem) {
@@ -665,7 +683,7 @@
         } else {
             video.currentTime = 0;
         }
-        if (wasPlaying || video.autoplay) video.play();
+        if (wasPlaying || video.autoplay) video.play().catch(() => {});
     }
 
     // ── Seek modifiers ─────────────────────────────────────────────────────
@@ -3411,7 +3429,14 @@
             choose.title = 'Choose a video for this pane';
             choose.setAttribute('aria-label', 'Choose');
             choose.className = 'mv-choose-pane';
-            paneBar.append(sceneTitleEl, choose);
+            const info = document.createElement('div');
+            info.className = 'mv-pane-info';
+            const nextStatus = document.createElement('span');
+            nextStatus.className = 'mv-pane-next-status';
+            nextStatus.textContent = isFilterBacked ? 'Auto-next' : 'Pinned · loops';
+            if (isFilterBacked) nextStatus.setAttribute('aria-live', 'polite');
+            info.append(sceneTitleEl, nextStatus);
+            paneBar.append(info, choose);
             overlay.append(centerControls, controls);
 
             // Volume popup (direct child of cell, not overlay)
