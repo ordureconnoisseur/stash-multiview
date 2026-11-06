@@ -307,6 +307,20 @@
 
     // ?"??"? Scene detail page button ?"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"??"?
 
+    async function sceneHasVideo(id) {
+        const response = await fetch('/graphql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: 'query MultiViewScene($id: ID!) { findScene(id: $id) { files { id } } }',
+                variables: { id },
+            }),
+        });
+        const result = await response.json();
+        if (!response.ok || result.errors?.length) throw new Error('Could not check this scene');
+        return Boolean(result.data?.findScene?.files?.length);
+    }
+
     function injectScenePageButton() {
         const match = window.location.pathname.match(/^\/scenes\/(\d+)\/?$/);
         const actions = document.getElementById('mv-scene-actions');
@@ -346,8 +360,14 @@
             const tab = window.open('', '_blank');
             if (tab) tab.opener = null;
             queueButton.disabled = play.disabled = true;
-            status.textContent = 'Queuing…';
+            status.textContent = 'Checking scene…';
             try {
+                if (!await sceneHasVideo(id)) {
+                    tab?.close();
+                    status.textContent = 'This scene has no video file.';
+                    return;
+                }
+                status.textContent = 'Queuing…';
                 if (!await setSceneQueued(id, true)) throw new Error();
                 const url = PLAYER_URL + '?t=' + Date.now();
                 if (!tab) window.location.assign(url);

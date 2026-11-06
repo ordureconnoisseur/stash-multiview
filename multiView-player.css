@@ -462,9 +462,13 @@ body:not(.mv-smart) #mv-grid[data-custom-sizes] > .mv-cell {
     body:not(.mv-smart) #mv-grid[data-custom-sizes] .mv-cell .mv-vol-popup { bottom: 30px; max-height: calc(100% - 32px); }
 }
 
-@container (max-width: 115px) {
+@container (max-width: 180px) {
     body.mv-smart #mv-grid .mv-cell-overlay { padding-inline: 4px; }
     body.mv-smart #mv-grid .mv-cell-controls { position: relative; z-index: 1; gap: 2px; }
+    body.mv-smart #mv-grid .mv-loop-badge { display: none; }
+    body.mv-smart #mv-grid .mv-cell-center-controls { gap: 2px; max-width: calc(100% - 6px); }
+    body.mv-smart #mv-grid .mv-cell-playpause { flex: 0 1 24px; min-width: 0; height: 24px; }
+    body.mv-smart #mv-grid .mv-cell-skip-btn { flex: 0 1 16px; min-width: 0; height: 16px; }
     body.mv-smart #mv-grid .mv-cell-controls .mv-cell-btn {
         flex: 1 1 0;
         min-width: 0;
@@ -1258,9 +1262,6 @@ body.mv-smart .mv-cell {
 body.mv-focus .mv-pane-bar { inset-block-start: calc(4px + var(--mv-toolbar-overlap, 0px)); }
 body.mv-focus:not(.mv-smart) .mv-cell:not(:hover):not(:focus-within) .mv-pane-bar {
     opacity: 0;
-}
-body.mv-focus:not(.mv-smart) .mv-cell video {
-    object-fit: cover;
 }
 body.mv-focus .mv-seekbar {
     display: none;
