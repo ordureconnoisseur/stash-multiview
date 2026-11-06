@@ -283,11 +283,12 @@ body:not(.mv-focus):not(.mv-smart) #mv-grid[data-custom-sizes] > .mv-cell {
 .mv-pane-bar {
     position: absolute;
     inset: 4px 4px auto;
+    container-type: inline-size;
     z-index: 21;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 4px;
+    gap: 2px;
     pointer-events: none;
 }
 .mv-pane-bar > * {
@@ -304,6 +305,12 @@ body:not(.mv-focus):not(.mv-smart) #mv-grid[data-custom-sizes] > .mv-cell {
     cursor: pointer;
 }
 .mv-choose-pane:hover { border-color: var(--mv-accent); }
+
+@container (max-width: 95px) {
+    .mv-pane-bar .mv-cell-title { min-width: 0; padding-inline: 2px; }
+    .mv-choose-pane { flex: 0 0 20px; padding-inline: 0; font-size: 0; }
+    .mv-choose-pane::before { content: '…'; font-size: 12px; }
+}
 
 .mv-cell-title {
     font-size: 11px;

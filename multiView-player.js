@@ -3071,6 +3071,7 @@
             } else {
                 sceneTitleEl.textContent = scenes[id]?.title || id;
             }
+            sceneTitleEl.title = scenes[id]?.title || id;
             sceneTitleEl.addEventListener('click', e => e.stopPropagation());
 
             // Controls row
@@ -3170,6 +3171,7 @@
             choose.type = 'button';
             choose.textContent = 'Choose';
             choose.title = 'Choose a video for this pane';
+            choose.setAttribute('aria-label', 'Choose');
             choose.className = 'mv-choose-pane';
             paneBar.append(sceneTitleEl, choose);
             overlay.append(centerControls, controls);
