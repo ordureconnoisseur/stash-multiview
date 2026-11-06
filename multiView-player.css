@@ -1269,3 +1269,45 @@ body.mv-focus .mv-seekbar {
 body.mv-focus .mv-cell:hover .mv-seekbar {
     display: block;
 }
+
+#mv-grid[data-pair-split] {
+    grid-template-columns: minmax(0, var(--mv-pair-left)) minmax(0, var(--mv-pair-right));
+}
+body #mv-grid[data-pair-split],
+body:not(.mv-smart) #mv-grid[data-custom-sizes][data-pair-split] {
+    display: grid;
+}
+body.mv-focus.mv-smart #mv-grid[data-pair-split] { top: 44px; }
+#mv-grid[data-pair-split] > .mv-cell,
+body:not(.mv-smart) #mv-grid[data-custom-sizes][data-pair-split] > .mv-cell {
+    position: relative;
+    min-width: 0;
+}
+#mv-pair-divider {
+    position: fixed;
+    z-index: 40;
+    width: 24px;
+    height: 72px;
+    transform: translate(-50%, -50%);
+    cursor: col-resize;
+    touch-action: none;
+    user-select: none;
+    display: grid;
+    place-items: center;
+    outline-offset: -2px;
+}
+#mv-pair-divider[hidden] { display: none; }
+#mv-pair-divider::before {
+    content: '';
+    width: 8px;
+    height: 52px;
+    border-radius: 5px;
+    border: 1px solid #a2a2a2;
+    background: #232323;
+    box-shadow: 0 0 0 2px #121212b3;
+}
+#mv-pair-divider:is(:hover, :focus-visible, :active)::before {
+    border-color: var(--mv-accent);
+    background: var(--mv-accent);
+}
+#mv-pair-divider:focus-visible { outline: 2px solid var(--mv-accent); }

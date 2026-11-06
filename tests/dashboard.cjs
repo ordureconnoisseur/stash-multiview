@@ -133,13 +133,19 @@ const focusMode = source.slice(source.indexOf('    function applyFocusMode('),
     source.indexOf('    function toggleSmartLayout('));
 let cleared = 0;
 let smartLayoutRuns = 0;
+const wallLayout = source.slice(source.indexOf('    function applyWallLayout('),
+    source.indexOf('    function positionPairDivider('));
+const modeGrid = { children: [], hasAttribute: () => false, toggleAttribute() {} };
 const modes = vm.createContext({
     playerSettings: { smartLayout: false },
-    document: { body: { classList: { toggle() {} } }, getElementById: () => null },
+    document: { body: { classList: { toggle() {} } }, getElementById: id => id === 'mv-grid' ? modeGrid : null },
+    pairDrag: null,
+    getPairSplit: () => null,
+    positionPairDivider() {},
     clearJustifiedLayout: () => { cleared++; },
     applyJustifiedLayout: () => { smartLayoutRuns++; }
 });
-vm.runInContext(focusMode + 'applyFocusMode(true);', modes);
+vm.runInContext(focusMode + wallLayout + 'applyFocusMode(true);', modes);
 assert.equal(cleared, 1, 'Focus clears automatic sizing when Smart is off');
 assert.equal(smartLayoutRuns, 0);
 vm.runInContext('playerSettings.smartLayout = true; applyFocusMode(true);', modes);

@@ -32,6 +32,7 @@ let unavailable;
 let transcodeId;
 let liveQueue = [];
 let writes = 0;
+let restoredSplit;
 const context = vm.createContext({
     console,
     recordAction: id => actions.push(id),
@@ -55,6 +56,8 @@ const context = vm.createContext({
         return result;
     },
     refreshUndoButton() {},
+    isPairSplit: value => Number.isInteger(value) && value >= 20 && value <= 80,
+    storePairSplit: (_scenes, split) => { restoredSplit = split; },
     flushDeferredQueueSync() {},
     flushDeferredAdvances() {},
     removeRenderedCell() {},
@@ -116,6 +119,10 @@ vm.runInContext(`
         stored = JSON.stringify([{ ...view, positions }]);
         assert.equal(context.readViews().length, 0);
     }
+    stored = JSON.stringify([{ ...view, pairSplit: 81 }]);
+    assert.equal(context.readViews().length, 0);
+    stored = JSON.stringify([{ ...view, pairSplit: 65 }]);
+    assert.equal(context.readViews().length, 1);
     const legacy = { ...view };
     delete legacy.positions;
     stored = JSON.stringify([legacy]);
@@ -130,7 +137,8 @@ vm.runInContext(`
     assert.equal(writes, 0, 'an intervening queue edit is preserved');
     liveQueue = [];
 
-    assert.equal(await context.restoreView(view), true);
+    assert.equal(await context.restoreView({ ...view, pairSplit: 65 }), true);
+    assert.equal(restoredSplit, 65);
     lateStarts.forEach(start => start());
     videos.forEach(video => video.dispatchEvent(new Event('loadedmetadata')));
     assert.deepEqual(videos.map(video => video.currentTime), [39, 70],

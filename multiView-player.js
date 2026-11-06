@@ -3,6 +3,12 @@
 
     const STORAGE_KEY = 'stash-multiview-queue';
     const VIEWS_KEY = 'stash-multiview-saved-views';
+    const PAIR_SPLITS_KEY = 'stash-multiview-pair-splits';
+    const PAIR_SPLIT_MIN = 20;
+    const PAIR_SPLIT_MAX = 80;
+    const PAIR_SPLIT_LIMIT = 100;
+    let pairSplits = readPairSplits();
+    let pairDrag = null;
     let paneSizes = [];
     let favoritePositions = null;
     const ROULETTE_COUNT_KEY = 'stash-multiview-roulette-count';
@@ -893,7 +899,7 @@
     // plain buttons are deliberately NOT excluded — the big play button covers a
     // cell's center, and middle/right-clicking it should still fire the shortcut
     // (left-clicks are ignored by the dispatcher via e.button === 0).
-    const MOUSE_BIND_EXCLUDE = 'a, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel, #mv-views, #mv-queue';
+    const MOUSE_BIND_EXCLUDE = 'a, .mv-vol-popup, #mv-settings-modal, #mv-menu-panel, #mv-views, #mv-queue, #mv-pair-divider';
     const MOUSE_LABELS = { Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click', Mouse3: 'Mouse Back', Mouse4: 'Mouse Forward' };
 
     // The cell a shortcut should act on: the click target's cell for mouse
@@ -1089,8 +1095,8 @@
         document.getElementById('mv-focus-btn')?.classList.toggle('active', enabled);
         const smart = document.getElementById('mv-smart-btn');
         smart?.setAttribute('aria-pressed', String(playerSettings.smartLayout));
-        if (playerSettings.smartLayout) applyJustifiedLayout();
-        else clearJustifiedLayout();
+        if (!playerSettings.smartLayout) clearJustifiedLayout();
+        applyWallLayout();
     }
 
     function toggleSmartLayout() {
@@ -2031,6 +2037,137 @@
         });
     }
 
+    function isPairSplit(value) {
+        return Number.isInteger(value) && value >= PAIR_SPLIT_MIN && value <= PAIR_SPLIT_MAX;
+    }
+
+    function readPairSplits() {
+        try {
+            return new Map(Object.entries(JSON.parse(localStorage.getItem(PAIR_SPLITS_KEY) || '{}'))
+                .filter(([key, value]) => /^\d+:\d+$/.test(key) && isPairSplit(value)));
+        } catch { return new Map(); }
+    }
+
+    function pairSplitKey(ids) {
+        return ids.slice().sort().join(':');
+    }
+
+    function getPairSplit(ids) {
+        if (ids.length !== 2) return null;
+        const width = pairSplits.get(pairSplitKey(ids));
+        return width === undefined ? null : ids[0] < ids[1] ? width : 100 - width;
+    }
+
+    function storePairSplit(ids, width) {
+        const key = pairSplitKey(ids);
+        pairSplits.delete(key);
+        if (width !== null) pairSplits.set(key, ids[0] < ids[1] ? width : 100 - width);
+        if (pairSplits.size > PAIR_SPLIT_LIMIT) pairSplits.delete(pairSplits.keys().next().value);
+        try { localStorage.setItem(PAIR_SPLITS_KEY, JSON.stringify(Object.fromEntries(pairSplits))); }
+        catch { /* The current tab can still use the split. */ }
+    }
+
+    function applyWallLayout() {
+        const grid = document.getElementById('mv-grid');
+        const cells = Array.from(grid.children);
+        const ids = cells.map(cell => cell.dataset.sceneId);
+        if (pairDrag && pairDrag.ids.join(':') !== ids.join(':')) pairDrag = null;
+        const split = pairDrag?.width ?? getPairSplit(ids);
+        const hadSplit = grid.hasAttribute('data-pair-split');
+        grid.toggleAttribute('data-pair-split', split !== null);
+        if (split !== null) {
+            grid.style.setProperty('--mv-pair-left', split + 'fr');
+            grid.style.setProperty('--mv-pair-right', (100 - split) + 'fr');
+        }
+        if (playerSettings.smartLayout) {
+            if (split === null) applyJustifiedLayout();
+            else if (!hadSplit) clearJustifiedLayout();
+        }
+        positionPairDivider(grid, cells);
+    }
+
+    function positionPairDivider(grid, cells) {
+        const divider = document.getElementById('mv-pair-divider');
+        if (cells.length !== 2) {
+            divider.hidden = true;
+            return;
+        }
+        const [left, right] = cells.map(cell => cell.getBoundingClientRect());
+        const top = Math.max(left.top, right.top);
+        const bottom = Math.min(left.bottom, right.bottom);
+        const bounds = grid.getBoundingClientRect();
+        if (left.right > right.left + 1 || bottom - top < 32 || bounds.width <= 0) {
+            divider.hidden = true;
+            return;
+        }
+        const x = (left.right + right.left) / 2;
+        const width = Math.round(100 * (x - bounds.left) / bounds.width);
+        divider.style.left = x + 'px';
+        divider.style.top = (top + bottom) / 2 + 'px';
+        divider.setAttribute('aria-controls', cells[0].id);
+        divider.setAttribute('aria-valuenow', String(Math.max(PAIR_SPLIT_MIN, Math.min(PAIR_SPLIT_MAX, width))));
+        divider.hidden = false;
+    }
+
+    function setupPairDivider() {
+        const grid = document.getElementById('mv-grid');
+        const divider = document.getElementById('mv-pair-divider');
+        const ids = () => Array.from(grid.children, cell => cell.dataset.sceneId);
+        const clamp = value => Math.max(PAIR_SPLIT_MIN, Math.min(PAIR_SPLIT_MAX, Math.round(value)));
+        const save = width => {
+            storePairSplit(ids(), width);
+            applyWallLayout();
+        };
+
+        divider.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || pairDrag) return;
+            divider.focus({ preventScroll: true });
+            const bounds = grid.getBoundingClientRect();
+            pairDrag = {
+                ids: ids(),
+                pointerId: event.pointerId,
+                start: event.clientX,
+                initial: Number(divider.getAttribute('aria-valuenow')),
+                total: bounds.width,
+                width: null
+            };
+            divider.setPointerCapture(event.pointerId);
+        });
+        divider.addEventListener('pointermove', event => {
+            if (pairDrag?.pointerId !== event.pointerId) return;
+            if (event.clientX === pairDrag.start && pairDrag.width === null) return;
+            pairDrag.width = clamp(pairDrag.initial + 100 * (event.clientX - pairDrag.start) / pairDrag.total);
+            applyWallLayout();
+        });
+        divider.addEventListener('pointerup', event => {
+            if (pairDrag?.pointerId !== event.pointerId) return;
+            const { width } = pairDrag;
+            pairDrag = null;
+            if (width !== null) save(width);
+        });
+        divider.addEventListener('lostpointercapture', event => {
+            if (pairDrag?.pointerId !== event.pointerId) return;
+            pairDrag = null;
+            applyWallLayout();
+        });
+        divider.addEventListener('dblclick', () => save(null));
+        divider.addEventListener('keydown', event => {
+            if (pairDrag || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            const width = Number(divider.getAttribute('aria-valuenow'));
+            const adjustments = {
+                ArrowLeft: clamp(width - 2),
+                ArrowRight: clamp(width + 2),
+                Home: PAIR_SPLIT_MIN,
+                End: PAIR_SPLIT_MAX,
+                Delete: null
+            };
+            if (!Object.hasOwn(adjustments, event.key)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            save(adjustments[event.key]);
+        });
+    }
+
     function readViews() {
         try {
             const views = JSON.parse(localStorage.getItem(VIEWS_KEY) || '[]');
@@ -2043,6 +2180,8 @@
                     && view.positions.length === view.scenes.length
                     && view.positions.every(time => Number.isFinite(time) && time >= 0)))
                 && (view.smartLayout === undefined || typeof view.smartLayout === 'boolean')
+                && (view.pairSplit === undefined || (view.scenes.length === 2
+                    && (view.pairSplit === null || isPairSplit(view.pairSplit))))
                 && Array.isArray(view.sizes) && view.sizes.length === view.scenes.length
                 && view.sizes.every(size => size === null || (Array.isArray(size) && size.length === 2
                     && size.every(value => value === null || (Number.isInteger(value) && value >= 10 && value <= 100)))));
@@ -2068,6 +2207,7 @@
                 return false;
             }
             paneSizes = view.sizes;
+            if (view.pairSplit !== undefined) storePairSplit(view.scenes, view.pairSplit);
             if (typeof view.smartLayout === 'boolean') {
                 playerSettings.smartLayout = view.smartLayout;
                 savePlayerSettings();
@@ -2149,8 +2289,10 @@
                         input.value = size;
                         paneSizes[index] ||= [null, null];
                         paneSizes[index][dimension] = size;
+                        if (dimension === 0 && visibleScenes().length === 2) storePairSplit(visibleScenes(), null);
                         if (playerSettings.smartLayout) toggleSmartLayout();
                         applyPaneSizes();
+                        applyWallLayout();
                     });
                     label.append(input);
                     row.append(label);
@@ -2196,7 +2338,8 @@
                     return Number.isFinite(time) ? Math.max(0, time) : 0;
                 }),
                 sizes: visible.map((_, index) => paneSizes[index] || null),
-                smartLayout: playerSettings.smartLayout
+                smartLayout: playerSettings.smartLayout,
+                ...(visible.length === 2 ? { pairSplit: getPairSplit(visible) } : {})
             };
         }
 
@@ -2242,7 +2385,10 @@
         });
         reset.addEventListener('click', () => {
             paneSizes = [];
+            const ids = visibleScenes();
+            if (ids.length === 2) storePairSplit(ids, null);
             applyPaneSizes();
+            applyWallLayout();
             refresh(select.value);
         });
     }
@@ -2832,6 +2978,8 @@
             grid.className = 'layout-1x1';
             empty.style.display = 'flex';
             titleEl.textContent = 'Stash Multiview';
+            applyPaneSizes();
+            applyWallLayout();
             grid.dispatchEvent(new Event('mv-wall-rendered'));
             return;
         }
@@ -2868,6 +3016,7 @@
             const isFilterBacked = filterBackedCells.has(id);
             cell.className = 'mv-cell' + (isFilterBacked ? ' mv-cell--filter' : '');
             cell.dataset.sceneId = id;
+            cell.id = 'mv-pane-' + id;
             cell.dataset.sceneRole = renderedRole(id);
 
             const video = document.createElement('video');
@@ -3021,7 +3170,7 @@
 
             video.addEventListener('loadedmetadata', () => {
                 connectAudio(id, video);
-                applyJustifiedLayout();
+                applyWallLayout();
             }, { once: true });
 
             setupPlayTracking(id, video);
@@ -3031,14 +3180,14 @@
             loadingDiv.innerHTML = '<div class="mv-spinner"></div>';
             video.addEventListener('canplay', () => {
                 loadingDiv.remove();
-                applyJustifiedLayout();
+                applyWallLayout();
             }, { once: true });
 
             // Final fallback: videoWidth/videoHeight are guaranteed non-zero during playback
             const checkDims = () => {
                 if (video.videoWidth > 0) {
                     video.removeEventListener('timeupdate', checkDims);
-                    applyJustifiedLayout();
+                    applyWallLayout();
                 }
             };
             video.addEventListener('timeupdate', checkDims);
@@ -3420,8 +3569,8 @@
                 grid.insertBefore(cell, grid.children[index] || null);
             }
         });
-        applyJustifiedLayout();
         applyPaneSizes();
+        applyWallLayout();
         grid.dispatchEvent(new Event('mv-wall-rendered'));
     }
 
@@ -3463,6 +3612,11 @@
 
     // Same-origin cross-tab: the local cache changed in another tab.
     window.addEventListener('storage', e => {
+        if (e.key === PAIR_SPLITS_KEY) {
+            pairSplits = readPairSplits();
+            applyWallLayout();
+            return;
+        }
         if (e.key !== STORAGE_KEY) return;
         if (pendingConfigWrites || rouletteBusy || queueRemoval) {
             queueSyncDeferred = true;
@@ -3759,6 +3913,7 @@
         document.getElementById('mv-fullscreen-btn').addEventListener('click', toggleFullscreen);
         document.getElementById('mv-settings-btn').addEventListener('click', openSettingsModal);
         setupViews();
+        setupPairDivider();
         setupQueuePicker();
         document.getElementById('mv-smart-btn').addEventListener('click', toggleSmartLayout);
         document.getElementById('mv-roulette-btn').addEventListener('click', openMenuPanel);
@@ -3803,9 +3958,7 @@
             const rightBound = KEYBIND_ACTIONS.some(a => playerSettings.keybinds[a.id] === 'Mouse2');
             if (rightBound) e.preventDefault();
         });
-        window.addEventListener('resize', () => {
-            applyJustifiedLayout();
-        });
+        window.addEventListener('resize', applyWallLayout);
 
         document.addEventListener('mousemove', e => { updateSeekFill(e); updateLoopDrag(e); queueSeekZone(e); });
         document.addEventListener('mouseup', e => {
