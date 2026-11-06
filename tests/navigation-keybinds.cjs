@@ -49,6 +49,12 @@ const customized = context.loadSettings({navigationKeybindVersion:1,keybinds:{re
 assert.equal(customized.keybinds.reroll, 'r');
 assert.equal(customized.keybinds.rollBoth, '');
 
+const existingSeek = context.loadSettings({keybinds:{seekBack:'n'}});
+assert.equal(existingSeek.keybinds.seekBack, 'n');
+assert.equal(existingSeek.keybinds.previousPane, '');
+const explicitPrevious = context.loadSettings({navigationKeybindVersion:1,keybinds:{seekBack:'n',previousPane:'Shift+n'}});
+assert.equal(explicitPrevious.keybinds.previousPane, 'Shift+n');
+
 context.runAction('reroll');
 assert.equal(calls.pop(), 'one');
 context.runAction('rollBoth');

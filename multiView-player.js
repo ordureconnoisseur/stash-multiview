@@ -1031,8 +1031,11 @@
             if (id in saved) continue;
             if (merged[id] && taken.has(merged[id])) merged[id] = '';
         }
-        if (!('previousBoth' in saved) && seekModifiers.includes('shift')
-                && SEEK_ACTION_IDS.some(id => saved[id] === 'r')) merged.previousBoth = '';
+        if (seekModifiers.includes('shift')) {
+            [['previousPane', 'n'], ['previousBoth', 'r']].forEach(([action, key]) => {
+                if (!(action in saved) && SEEK_ACTION_IDS.some(id => saved[id] === key)) merged[action] = '';
+            });
+        }
         return merged;
     }
 
