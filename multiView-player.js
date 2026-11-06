@@ -2285,6 +2285,7 @@
             load.disabled = remove.disabled = !names.length;
             update.disabled = !names.length || !visibleScenes().length;
             refreshPanes(true);
+            refreshSuggestedName();
         }
 
         let paneSignature = '';
@@ -2344,7 +2345,9 @@
         }
 
         grid.addEventListener('mv-wall-rendered', () => {
-            if (dialog.open) refreshPanes();
+            if (!dialog.open) return;
+            refreshPanes();
+            refreshSuggestedName();
         });
         paneControls.addEventListener('focusout', () => queueMicrotask(() => {
             if (dialog.open) refreshPanes();
@@ -2355,14 +2358,17 @@
             nameInput.value = lastSuggestion;
         }
 
+        function refreshSuggestedName() {
+            if (visibleScenes().length && (!nameInput.value.trim() || nameInput.value === lastSuggestion)) {
+                fillSuggestedName();
+            }
+        }
+
         suggest.addEventListener('click', fillSuggestedName);
 
         function openViewDialog(save) {
             status.textContent = '';
             refresh(select.value);
-            if (visibleScenes().length && (!nameInput.value.trim() || nameInput.value === lastSuggestion)) {
-                fillSuggestedName();
-            }
             if (!dialog.open) dialog.showModal();
             if (save) {
                 nameInput.focus();
