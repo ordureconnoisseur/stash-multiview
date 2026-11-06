@@ -976,8 +976,8 @@
         const roles = [playerSettings.fineModifier, playerSettings.allCellsModifier];
         const allowed = roles.flatMap(role => role === 'ctrl' ? ['Ctrl', 'Meta']
             : role === 'shift' ? ['Shift'] : role === 'alt' ? ['Alt'] : []);
-        return SEEK_ACTION_IDS.map(id => playerSettings.keybinds[id]).find(binding => {
-            if (!binding) return false;
+        return SEEK_ACTION_IDS.map(id => playerSettings.keybinds[id]).filter(Boolean)
+            .sort((a, b) => b.split('+').length - a.split('+').length).find(binding => {
             const required = binding.split('+');
             if (required.pop() !== key) return false;
             return required.every(modifier => held.includes(modifier))
@@ -1002,13 +1002,15 @@
     // version must not steal a key the user already bound to something else, so
     // a colliding default is dropped rather than leaving two actions on one key
     // (runBinding would silently fire whichever comes first in KEYBIND_ACTIONS).
-    function mergeKeybinds(saved = {}) {
+    function mergeKeybinds(saved = {}, seekModifiers = ['shift', 'alt']) {
         const merged = { ...Object.fromEntries(KEYBIND_ACTIONS.map(action => [action.id, ''])), ...DEFAULT_KEYBINDS, ...saved };
         const taken = new Set(Object.values(saved).filter(Boolean));
         for (const id of Object.keys(merged)) {
             if (id in saved) continue;
             if (merged[id] && taken.has(merged[id])) merged[id] = '';
         }
+        if (!('undoRoll' in saved) && seekModifiers.includes('shift')
+                && SEEK_ACTION_IDS.some(id => saved[id] === 'r')) merged.undoRoll = '';
         return merged;
     }
 
@@ -1029,7 +1031,7 @@
             fineModifier: pickModifier(saved.fineModifier, 'shift'),
             // Alt rather than Ctrl by default; Ctrl+wheel is browser zoom.
             allCellsModifier: pickModifier(saved.allCellsModifier, 'alt'),
-            keybinds: mergeKeybinds(saved.keybinds || {})
+            keybinds: mergeKeybinds(saved.keybinds || {}, [saved.fineModifier ?? 'shift', saved.allCellsModifier ?? 'alt'])
         };
     }
 
@@ -3533,13 +3535,13 @@
             const tag = e.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
             const binding = normalizeKey(e.key);
+            const chord = keyboardBinding(e);
+            if (chord !== binding && runBinding(chord, e)) return;
             const seekBinding = matchingSeekBinding(e);
             if (seekBinding && (isFineSeek(e) || isAllCellsSeek(e))) {
                 runBinding(seekBinding, e);
                 return;
             }
-            const chord = keyboardBinding(e);
-            if (chord !== binding && runBinding(chord, e)) return;
             // The one exception: a modifier the user has given a seek role,
             // pressed with a key bound to a seek action, is ours. runBinding
             // calls preventDefault, which is also what stops Alt+Left from

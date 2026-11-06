@@ -11,16 +11,26 @@ const initialSource = source.slice(source.indexOf('            const baseSrc = p
     source.indexOf('            video.autoplay = true;'));
 const keys = source.slice(source.indexOf('    function normalizeKey('),
     source.indexOf('    function keyLabel('));
+const runBinding = source.slice(source.indexOf('    function runBinding('),
+    source.indexOf('    let keybindCaptureActive'));
+const merge = source.slice(source.indexOf('    function mergeKeybinds('),
+    source.indexOf('    function loadPlayerSettings'));
+const keyHandlerStart = source.indexOf("        document.addEventListener('keydown', e => {", source.indexOf('    async function init()'));
+const keyHandler = source.slice(keyHandlerStart + "        document.addEventListener('keydown', ".length,
+    source.indexOf("        // Mouse-button shortcuts.", keyHandlerStart)).trim().replace(/;$/, '').replace(/\)$/, '');
+const defaults = source.match(/    const DEFAULT_KEYBINDS = .*;/)[0];
 const seekBinding = source.slice(source.indexOf('    function matchingSeekBinding('),
     source.indexOf('    // Fire the action'));
 const view = { name: 'Pair', scenes: ['1', '2'], sizes: [null, null], positions: [39, 70] };
 let stored = JSON.stringify([view]);
+const actions = [];
 let videos = [];
 let lateStarts = [];
 const context = vm.createContext({
     console,
+    recordAction: id => actions.push(id),
     localStorage: { getItem: () => stored },
-    document: { getElementById: () => ({ children: [] }) },
+    document: { getElementById: () => ({ children: [], open: false }) },
     mutateConfigQueue: async callback => callback([]),
     refreshUndoButton() {},
     flushDeferredQueueSync() {},
@@ -55,6 +65,17 @@ vm.runInContext(`
     ${views}
     ${keys}
     ${seekBinding}
+    ${defaults}
+    const KEYBIND_ACTIONS = ['seekBack', 'seekForward', 'saveFavorite', 'undoRoll'].map(id => ({
+        id, run: () => recordAction(id)
+    }));
+    const keybindCaptureActive = false;
+    const isFineSeek = e => e.shiftKey;
+    const isAllCellsSeek = e => e.altKey;
+    ${runBinding}
+    ${merge}
+    globalThis.dispatch = ${keyHandler};
+    globalThis.mergeKeybinds = mergeKeybinds;
     globalThis.makeInitialSource = (id, video) => {
         const isFilterBacked = false;
         ${initialSource}
@@ -95,6 +116,29 @@ vm.runInContext(`
     assert.equal(context.matchingSeekBinding({key: 'J', ctrlKey: true, shiftKey: true}), 'Ctrl+j');
     assert.equal(context.matchingSeekBinding({key: 'j', ctrlKey: true, altKey: true}), 'Ctrl+j');
     assert.equal(context.matchingSeekBinding({key: 'j', altKey: true}), undefined);
+    const dispatch = event => context.dispatch({
+        target: {tagName: 'DIV'}, preventDefault() {}, ...event
+    });
+    context.playerSettings.keybinds = {seekBack: 'ArrowLeft', saveFavorite: 'Alt+ArrowLeft'};
+    dispatch({key: 'ArrowLeft', altKey: true});
+    assert.equal(actions.pop(), 'saveFavorite');
+    context.playerSettings.keybinds = {seekBack: 'j', seekForward: 'Shift+j'};
+    dispatch({key: 'J', shiftKey: true});
+    assert.equal(actions.pop(), 'seekForward');
+    context.playerSettings.keybinds = context.mergeKeybinds({seekBack: 'r'});
+    assert.equal(context.playerSettings.keybinds.undoRoll, '');
+    dispatch({key: 'R', shiftKey: true});
+    assert.equal(actions.pop(), 'seekBack');
+    context.playerSettings.keybinds = {seekBack: 'Ctrl+j'};
+    for (const role of [{shiftKey: true}, {altKey: true}]) {
+        dispatch({key: 'j', ctrlKey: true, ...role});
+        assert.equal(actions.pop(), 'seekBack');
+    }
+    context.pickStream = id => '/scene/' + id + '/stream.webm';
+    await context.restoreView(view);
+    lateStarts.forEach(start => start());
+    assert.deepEqual(videos.map(video => video.src),
+        ['/scene/1/stream.webm?start=39', '/scene/2/stream.webm?start=70']);
     console.log('Favorite timestamps, staggered initialization, legacy views, validation and seek chords passed');
 })().catch(error => {
     console.error(error);
