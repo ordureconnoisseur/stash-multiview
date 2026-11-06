@@ -185,32 +185,34 @@ const filterSearch = source.slice(source.indexOf('    async function findFilterS
     source.indexOf('    async function resolveFilterSlot('));
 const advance = source.slice(source.indexOf('    async function advanceFilterCell('),
     source.indexOf('    function seekToStart('));
+const withFile = id => ({ id: String(id), files: [{ id: String(id) }] });
+const fileless = Array.from({ length: 24 }, (_, index) => ({ id: String(index + 3), files: [] }));
 (async () => {
-    for (const [response, playable, expected, statusText] of [
-        [{ errors: [{ message: 'Stash unavailable' }] }, true, '2', 'Could not load next'],
-        [{ data: { findScenes: { scenes: [{ id: '1' }, { id: '2' }] } } }, true, '2', 'No other match'],
-        [{ data: { findScenes: { scenes: [{ id: '3' }] } } }, false, '2', 'Could not load next'],
-        [{ data: { findScenes: { scenes: [{ id: '3' }] } } }, true, '3', 'Loading next video'],
-        [{ data: { findScenes: { scenes: ['1', '2', '3', '4'].map(id => ({ id })) } } },
-            id => id !== '3', '4', 'Loading next video']
+    for (const [scenes, playable, expected, statusText, pages] of [
+        [null, true, '2', 'Could not load next', 1],
+        [[withFile(1), withFile(2)], true, '2', 'No other playable match', 1],
+        [[withFile(3)], false, '2', 'Could not load next', 1],
+        [[withFile(3)], true, '3', 'Loading next video', 1],
+        [[withFile(1), withFile(2), ...fileless, withFile(27)], true, '27', 'Loading next video', 2],
+        [[withFile(1), withFile(2), ...fileless], true, '2', 'No other playable match', 2]
     ]) {
         const status = { textContent: 'Auto-next' };
         const video = {};
-        let lookups = 0;
+        const lookups = [];
         let replays = 0;
         let renders = 0;
         const context = vm.createContext({
             buildSceneFilter() {},
             fetch: async (_, options) => {
-                lookups++;
-                const { per_page } = JSON.parse(options.body).variables.filter;
-                const results = response.data?.findScenes.scenes;
-                const json = results
-                    ? { data: { findScenes: { scenes: results.slice(0, per_page) } } }
-                    : response;
+                const { per_page, page, sort } = JSON.parse(options.body).variables.filter;
+                lookups.push({ page, sort });
+                const offset = (page - 1) * per_page;
+                const json = scenes
+                    ? { data: { findScenes: { scenes: scenes.slice(offset, offset + per_page) } } }
+                    : { errors: [{ message: 'Stash unavailable' }] };
                 return { ok: true, json: async () => json };
             },
-            fetchSceneMeta: async id => typeof playable === 'function' ? playable(id) : playable,
+            fetchSceneMeta: async () => playable,
             render: () => { renders++; },
             seekToStart: () => { replays++; },
             document: { querySelector: () => ({ querySelector: selector => selector === 'video' ? video : status }) }
@@ -229,7 +231,10 @@ const advance = source.slice(source.indexOf('    async function advanceFilterCel
             vm.runInContext("advanceFilterCell('2')", context),
             vm.runInContext("advanceFilterCell('2')", context)
         ]);
-        assert.equal(lookups, 1, 'one pane has at most one next-video lookup in flight');
+        assert.deepEqual(lookups.map(lookup => lookup.page), Array.from({ length: pages }, (_, i) => i + 1),
+            'one advance visits each required page once');
+        assert.match(lookups[0].sort, /^random_\d+$/);
+        assert.ok(lookups.every(lookup => lookup.sort === lookups[0].sort), 'page requests keep one random order');
         assert.equal(status.textContent, statusText);
         assert.equal(vm.runInContext("queue.join(',')", context), '1,' + expected);
         assert.equal(replays, expected === '2' ? 1 : 0);

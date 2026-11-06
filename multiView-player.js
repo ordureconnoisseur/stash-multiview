@@ -501,29 +501,34 @@
         return Object.keys(sf).length ? sf : undefined;
     }
 
-    async function findFilterScenes(item, count) {
+    async function findFilterScenes(item, count, paging) {
         try {
             const f = item.filter || {};
-            const findFilter = { per_page: count, sort: 'random' };
+            const findFilter = { per_page: count, sort: paging?.sort || 'random', page: paging?.page };
             if (f.q) findFilter.q = f.q;
             const res = await fetch('/graphql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    query: `query($filter: FindFilterType, $scene_filter: SceneFilterType) { findScenes(filter: $filter, scene_filter: $scene_filter) { scenes { id } } }`,
-                    variables: { filter: findFilter, scene_filter: buildSceneFilter(f) }
+                    query: `query($filter: FindFilterType, $scene_filter: SceneFilterType, $withFiles: Boolean!) {
+                        findScenes(filter: $filter, scene_filter: $scene_filter) {
+                            scenes { id files @include(if: $withFiles) { id } }
+                        }
+                    }`,
+                    variables: { filter: findFilter, scene_filter: buildSceneFilter(f), withFiles: !!paging }
                 })
             });
             const data = await res.json();
             const list = data?.data?.findScenes?.scenes;
             if (!res.ok || data.errors?.length || !Array.isArray(list)) return null;
-            return list.map(scene => String(scene.id));
+            return list;
         } catch { return null; }
     }
 
     async function resolveFilterSlot(item, excluded) {
         const candidates = await findFilterScenes(item, excluded.size + 1);
-        return candidates?.find(id => !excluded.has(id));
+        const match = candidates?.find(scene => !excluded.has(String(scene.id)));
+        return match && String(match.id);
     }
 
     // Reuse matching live slots where possible and reserve all pinned scene IDs
@@ -631,36 +636,45 @@
         advancingCells.add(id);
         show('Loading next video');
         try {
-            const excluded = new Set(queue);
-            if (!manual && undoSceneId) excluded.add(undoSceneId);
-            // Leave room for missing files and candidates taken by other advancing panes.
-            const candidates = await findFilterScenes(filterItem, excluded.size + 16);
-            if (!stillCurrent() || waitForQueue()) return;
-            let unavailable = candidates === null;
-            for (const candidate of candidates || []) {
-                if (!available(candidate)) continue;
-                const playable = await fetchSceneMeta(candidate);
+            const pageSize = 24;
+            // Keep one randomized order across pages so a rejected scene does not
+            // hide other matches or reappear on the next page.
+            const sort = 'random_' + Math.floor(Math.random() * 100_000_000);
+            let unavailable = false;
+            for (let page = 1; ; page++) {
+                const candidates = await findFilterScenes(filterItem, pageSize, { sort, page });
                 if (!stillCurrent() || waitForQueue()) return;
-                if (!playable) {
+                if (candidates === null) {
                     unavailable = true;
-                    continue;
+                    break;
                 }
-                if (!available(candidate)) continue;
-                const slot = queue.indexOf(id);
-                replaceFilterScene(id, candidate, filterItem);
-                if (manual) {
-                    setUndoRoll(async () => {
-                        const current = queue[slot];
-                        if (filterBackedCells.get(current) !== filterItem || queue.includes(id)) return;
-                        replaceFilterScene(current, id, filterItem);
-                        await loadSceneMeta([id]);
-                        render();
-                    }, id);
+                for (const scene of candidates) {
+                    const candidate = String(scene.id);
+                    if (!scene.files?.length || !available(candidate)) continue;
+                    const playable = await fetchSceneMeta(candidate);
+                    if (!stillCurrent() || waitForQueue()) return;
+                    if (!playable) {
+                        unavailable = true;
+                        continue;
+                    }
+                    if (!available(candidate)) continue;
+                    const slot = queue.indexOf(id);
+                    replaceFilterScene(id, candidate, filterItem);
+                    if (manual) {
+                        setUndoRoll(async () => {
+                            const current = queue[slot];
+                            if (filterBackedCells.get(current) !== filterItem || queue.includes(id)) return;
+                            replaceFilterScene(current, id, filterItem);
+                            await loadSceneMeta([id]);
+                            render();
+                        }, id);
+                    }
+                    render();
+                    return;
                 }
-                render();
-                return;
+                if (candidates.length < pageSize) break;
             }
-            show(unavailable ? 'Could not load next' : 'No other match');
+            show(unavailable ? 'Could not load next' : 'No other playable match');
             const video = cell?.querySelector('video');
             if (video) seekToStart(id, video);
         } finally {
