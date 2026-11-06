@@ -2220,8 +2220,9 @@
             }
             paneSizes = view.sizes;
             if (view.scenes.length === 2) storePairSplit(view.scenes, view.pairSplit ?? null);
-            if (typeof view.smartLayout === 'boolean') {
-                playerSettings.smartLayout = view.smartLayout;
+            const manualSizes = view.sizes.some(size => size?.some(value => value !== null));
+            if (view.smartLayout !== undefined || manualSizes) {
+                playerSettings.smartLayout = view.smartLayout ?? false;
                 savePlayerSettings();
                 applyFocusMode(playerSettings.focusMode);
             }

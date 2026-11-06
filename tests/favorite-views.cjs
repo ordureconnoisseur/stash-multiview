@@ -56,6 +56,8 @@ const context = vm.createContext({
         return result;
     },
     refreshUndoButton() {},
+    savePlayerSettings() {},
+    applyFocusMode() {},
     isPairSplit: value => Number.isInteger(value) && value >= 20 && value <= 80,
     storePairSplit: (_scenes, split) => { restoredSplit = split; },
     flushDeferredQueueSync() {},
@@ -165,6 +167,12 @@ vm.runInContext(`
 
     await context.restoreView(legacy);
     assert.equal(restoredSplit, null, 'a legacy Favorite uses its saved pane sizes');
+    context.playerSettings.smartLayout = true;
+    const manual = { ...legacy, sizes: [[35, 100], [65, 100]] };
+    await context.restoreView(manual);
+    assert.equal(context.playerSettings.smartLayout, false, 'legacy manual sizes take precedence over Smart');
+    await context.restoreView({ ...manual, smartLayout: true });
+    assert.equal(context.playerSettings.smartLayout, true, 'explicit Smart setting is preserved');
     lateStarts.forEach(start => start());
     videos.forEach(video => video.dispatchEvent(new Event('loadedmetadata')));
     assert.deepEqual(videos.map(video => video.currentTime), [130, 130]);
