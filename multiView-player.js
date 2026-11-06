@@ -897,8 +897,8 @@
     // The cell a shortcut should act on: the click target's cell for mouse
     // bindings, else whatever cell the pointer is hovering (keyboard bindings).
     function hoveredCell(e) {
-        return (e && e.target && e.target.closest && e.target.closest('.mv-cell'))
-            || document.querySelector('.mv-cell:hover');
+        return document.querySelector('.mv-cell:hover')
+            || (e?.type === 'mousedown' ? e.target?.closest?.('.mv-cell') : null);
     }
     function isRandomScene(id) {
         const item = filterBackedCells.get(id);

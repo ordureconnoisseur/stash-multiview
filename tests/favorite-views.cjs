@@ -66,7 +66,7 @@ vm.runInContext(`
     ${keys}
     ${seekBinding}
     ${defaults}
-    const KEYBIND_ACTIONS = ['seekBack', 'seekForward', 'saveFavorite', 'undoRoll'].map(id => ({
+    const KEYBIND_ACTIONS = ['seekBack', 'seekForward', 'saveFavorite', 'undoRoll', 'previousPane', 'previousBoth'].map(id => ({
         id, run: () => recordAction(id)
     }));
     const keybindCaptureActive = false;
@@ -128,6 +128,10 @@ vm.runInContext(`
     context.playerSettings.keybinds = context.mergeKeybinds({seekBack: 'r'});
     assert.equal(context.playerSettings.keybinds.undoRoll, '');
     dispatch({key: 'R', shiftKey: true});
+    assert.equal(actions.pop(), 'seekBack');
+    context.playerSettings.keybinds = context.mergeKeybinds({seekBack: 'n'});
+    assert.equal(context.playerSettings.keybinds.previousPane, '');
+    dispatch({key: 'N', shiftKey: true});
     assert.equal(actions.pop(), 'seekBack');
     context.playerSettings.keybinds = {seekBack: 'Ctrl+j'};
     for (const role of [{shiftKey: true}, {altKey: true}]) {

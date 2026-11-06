@@ -8,9 +8,12 @@ const actions = source.slice(source.indexOf('    const KEYBIND_ACTIONS ='),
     source.indexOf('    // Targets where a non-left button'));
 const settings = source.slice(source.indexOf('    function mergeKeybinds('),
     source.indexOf('    let playerSettings ='));
+const hover = source.slice(source.indexOf('    function hoveredCell('),
+    source.indexOf('    function isRandomScene('));
 const volume = source.slice(source.indexOf('    function adjustVolume('),
     source.indexOf('    function muteHoveredCell('));
 const calls = [];
+let pointerCell = null;
 const sliders = [1, 1].map(value => ({
     value, events: 0,
     dispatchEvent(event) { assert.equal(event.type, 'input'); this.events++; },
@@ -21,8 +24,7 @@ const context = vm.createContext({
     rerollPane: () => calls.push('one'),
     loadRoulette: (count, mode) => calls.push([count, mode]),
     undoLastRoll: () => calls.push('previous'),
-    hoveredCell: event => event.cell || null,
-    document: { querySelectorAll: () => cells },
+    document: { querySelectorAll: () => cells, querySelector: () => pointerCell },
 });
 vm.runInContext(`
     let undoSceneId = null;
@@ -32,6 +34,7 @@ vm.runInContext(`
     const SEEK_MODIFIERS = [{value:'none'}, {value:'shift'}, {value:'alt'}, {value:'ctrl'}];
     ${actions}
     ${settings}
+    ${hover}
     ${volume}
     globalThis.loadSettings = loadPlayerSettings;
     globalThis.runAction = (id, event = {}) => KEYBIND_ACTIONS.find(action => action.id === id).run(event);
@@ -73,12 +76,18 @@ context.runAction('previousBoth');
 assert.equal(calls.pop(), 'previous');
 context.runAction('volumeUp');
 assert.deepEqual(sliders.map(slider => Number(slider.value)), [1.05, 1.05]);
-context.runAction('volumeDown', {cell: cells[1]});
+pointerCell = cells[1];
+context.runAction('volumeDown', {type:'keydown', target:{closest:() => cells[0]}});
 assert.deepEqual(sliders.map(slider => Number(slider.value)), [1.05, 1]);
 sliders[0].value = 2;
-context.runAction('volumeUp', {cell:cells[0]});
+pointerCell = cells[0];
+context.runAction('volumeUp');
 assert.equal(Number(sliders[0].value), 2);
 sliders[0].value = 0;
-context.runAction('volumeDown', {cell:cells[0]});
+context.runAction('volumeDown');
 assert.equal(Number(sliders[0].value), 0);
+pointerCell = null;
+sliders.forEach(slider => { slider.value = 1; });
+context.runAction('volumeDown', {type:'keydown', target:{closest:() => cells[0]}});
+assert.deepEqual(sliders.map(slider => Number(slider.value)), [0.95, 0.95]);
 console.log('Navigation defaults, one-time migration, editable overrides, roll scopes, previous scopes and volume bounds passed');
