@@ -542,24 +542,49 @@
         return resolved.filter(Boolean);
     }
 
+    // Same filter slot? Compared by the filter itself, as resolveQueuePreserving does.
+    function sameFilter(a, b) {
+        return !!a && !!b && JSON.stringify(a.filter || {}) === JSON.stringify(b.filter || {});
+    }
+
+    // Where a cell's slot sits in a raw queue (the local cache or config).
+    // A scene id matches by value. A filter-backed cell matches the n-th
+    // slot with its filter, n being its rank among the cells sharing that
+    // filter: identical slots are interchangeable, but their order is the
+    // grid's order. The cell's own index in `queue` is no use here: filter
+    // slots that resolved to nothing are dropped from `queue`, and roulette
+    // adds cells before the cache catches up, so the two drift apart.
+    function slotIndexFor(items, id, filterItem, rank) {
+        if (!filterItem) return items.indexOf(id);
+        let seen = 0, last = -1;
+        for (let i = 0; i < items.length; i++) {
+            const it = items[i];
+            if (typeof it !== 'object' || it === null || !sameFilter(it, filterItem)) continue;
+            if (seen === rank) return i;
+            seen++; last = i;
+        }
+        return last;   // fewer such slots than expected (queue changed): drop the last
+    }
+
     function removeScene(id) {
         id = String(id);
         const idx = queue.indexOf(id);
         if (idx === -1) return;
+        const filterItem = filterBackedCells.get(id);
+        const rank = filterItem
+            ? queue.slice(0, idx).filter(q => sameFilter(filterBackedCells.get(q), filterItem)).length
+            : 0;
         queue.splice(idx, 1);
         const raw = getQueue();
-        if (idx < raw.length) raw.splice(idx, 1);
-        saveQueue(raw);
-        // Persist the removal to config (RMW) so other clients see it.
-        // A scene-id string removes by value (robust against a changed
-        // queue); a filter-backed cell drops the slot at the same index.
+        const r = slotIndexFor(raw, id, filterItem, rank);
+        if (r >= 0) { raw.splice(r, 1); saveQueue(raw); }
+        // Persist the removal to config (RMW) so other clients see it,
+        // locating the slot the same way in the live config.
         mutateConfigQueue(items => {
-            const k = items.indexOf(id);
-            if (k >= 0) { items.splice(k, 1); return items; }
-            if (idx < items.length && typeof items[idx] === 'object') {
-                items.splice(idx, 1); return items;
-            }
-            return null;
+            const k = slotIndexFor(items, id, filterItem, rank);
+            if (k < 0) return null;
+            items.splice(k, 1);
+            return items;
         });
         unmutedIds.delete(String(id));
         filterBackedCells.delete(String(id));
