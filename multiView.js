@@ -50,7 +50,12 @@
             body: JSON.stringify({ query: '{ configuration { plugins } }' })
         });
         const j = await r.json();
-        const raw = j?.data?.configuration?.plugins?.multiView?.queue;
+        const plugins = j?.data?.configuration?.plugins;
+        // A failed read must not look like an empty queue: callers write
+        // their change on top of it (wiping the queue) or render it (an
+        // empty wall). Throw so they keep the cache and skip the write.
+        if (!r.ok || j?.errors?.length || !plugins) throw new Error('multiView: config read failed');
+        const raw = plugins.multiView?.queue;
         try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; }
         catch { return []; }
     }
