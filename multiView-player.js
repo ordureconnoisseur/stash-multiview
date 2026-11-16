@@ -466,18 +466,30 @@
         return Object.keys(sf).length ? sf : undefined;
     }
 
+    // Scenes with no file have nothing to stream, so filter and roulette
+    // slots only pick scenes that have one.
+    const HAS_FILE = { value: 0, modifier: 'GREATER_THAN' };
+
+    // A filter that sets file_count itself asked for exactly that, so it
+    // keeps its own rule (and its no-file cells stay put, see render()).
+    function filterSetsFileCount(f) {
+        return !!buildSceneFilter(f || {})?.file_count;
+    }
+
     // excludeId: fetch 3 candidates so we can skip the current scene when advancing
     async function resolveFilterSlot(item, excludeId = null) {
         try {
             const f = item.filter || {};
             const findFilter = { per_page: excludeId ? 3 : 1, sort: 'random' };
             if (f.q) findFilter.q = f.q;
+            const sceneFilter = buildSceneFilter(f) || {};
+            if (!sceneFilter.file_count) sceneFilter.file_count = HAS_FILE;
             const res = await fetch('/graphql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     query: `query($filter: FindFilterType, $scene_filter: SceneFilterType) { findScenes(filter: $filter, scene_filter: $scene_filter) { scenes { id } } }`,
-                    variables: { filter: findFilter, scene_filter: buildSceneFilter(f) }
+                    variables: { filter: findFilter, scene_filter: sceneFilter }
                 })
             });
             const data = await res.json();
@@ -1363,13 +1375,20 @@
             });
             const data = await res.json();
             const scene = data?.data?.findScene;
+            // findScene answers null, without an error, for a scene that no
+            // longer exists. Like a scene with no file it has nothing to play.
+            if (scene === null && data?.data && !data.errors?.length) {
+                scenes[id] = { id, title: String(id), streams: {}, noFile: true, missing: true };
+                return;
+            }
             if (!scene) return;
             let title = scene.title;
             if (!title) {
                 const path = scene.files?.[0]?.path;
                 title = path ? path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : String(id);
             }
-            scenes[id] = { id, title, oCount: scene.o_counter ?? 0, duration: scene.files?.[0]?.duration ?? null, streams: parseStreams(scene.sceneStreams) };
+            scenes[id] = { id, title, oCount: scene.o_counter ?? 0, duration: scene.files?.[0]?.duration ?? null, streams: parseStreams(scene.sceneStreams),
+                           noFile: Array.isArray(scene.files) && scene.files.length === 0 };
         } catch {
             if (!scenes[id]) scenes[id] = { id, title: String(id), streams: {} };
         }
@@ -1380,6 +1399,7 @@
     }
 
     async function incrementO(id) {
+        if (scenes[id]?.noFile) return;
         try {
             const res = await fetch('/graphql', {
                 method: 'POST',
@@ -2086,6 +2106,7 @@
     }
 
     function toggleAudio(id) {
+        if (scenes[String(id)]?.noFile) return;
         getAudioCtx(); // resume on any interaction
         if (unmutedIds.has(String(id))) unmutedIds.delete(String(id));
         else unmutedIds.add(String(id));
@@ -2109,7 +2130,7 @@
         if (unmutedIds.size > 0) {
             unmutedIds.clear();
         } else {
-            queue.forEach(id => typeof id === 'string' && unmutedIds.add(id));
+            queue.forEach(id => typeof id === 'string' && !scenes[id]?.noFile && unmutedIds.add(id));
         }
         document.querySelectorAll('.mv-cell').forEach(applyAudioCell);
         updateMuteAllBtn();
@@ -2256,6 +2277,45 @@
 
     // �"?�"? Render �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
+    // Static cell for a scene with nothing to play: a message, the title
+    // link and the remove control. No <video>, so no requests at all.
+    function buildNoFileCell(cell, id) {
+        const missing = !!scenes[id]?.missing;
+        cell.classList.add('mv-cell--nofile');
+
+        const msg = document.createElement('div');
+        msg.className = 'mv-nofile';
+        const head = document.createElement('strong');
+        head.textContent = missing ? 'Scene not found' : 'No file';
+        const sub = document.createElement('span');
+        sub.textContent = missing ? 'This scene is no longer in Stash.' : 'This scene has no video file in Stash.';
+        msg.append(head, sub);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'mv-cell-overlay';
+        const titleEl = document.createElement('a');
+        titleEl.className = 'mv-cell-title';
+        titleEl.href = `/scenes/${id}`;
+        titleEl.target = '_blank';
+        titleEl.rel = 'noopener';
+        titleEl.textContent = scenes[id]?.title || id;
+        titleEl.addEventListener('click', e => e.stopPropagation());
+
+        const controls = document.createElement('div');
+        controls.className = 'mv-cell-controls';
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'mv-cell-btn mv-cell-remove';
+        removeBtn.innerHTML = ICON_REMOVE;
+        removeBtn.title = 'Remove';
+        removeBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            removeScene(id);
+        });
+        controls.append(removeBtn);
+        overlay.append(titleEl, controls);
+        cell.append(msg, overlay);
+    }
+
     function render() {
         const grid = document.getElementById('mv-grid');
         const empty = document.getElementById('mv-empty');
@@ -2288,17 +2348,46 @@
         }
         const queueSet = new Set(queue);
 
+        // Insert at correct queue position instead of appending to end, and
+        // register the new cell so a duplicate of this id later in the same
+        // queue (two filter slots resolving to the same scene, etc.) is
+        // skipped instead of spawning a second cell with the same id.
+        const insertCell = (cell, id, idx) => {
+            let refCell = null;
+            for (let i = idx + 1; i < queue.length; i++) {
+                const nextId = queue[i];
+                if (typeof nextId !== 'string') continue;
+                const next = existing.get(nextId);
+                if (next) { refCell = next; break; }
+            }
+            grid.insertBefore(cell, refCell);
+            existing.set(id, cell);
+        };
+
         // Add new cells at their correct queue position (before removal to avoid layout flash)
         let newCellOrdinal = 0; // counts only cells created this pass, for stream stagger
         queue.forEach((id, idx) => {
             if (typeof id !== 'string') return;
             if (existing.has(id)) return;
 
-            const staggerSlot = newCellOrdinal++;
             const cell = document.createElement('div');
             const isFilterBacked = filterBackedCells.has(id);
             cell.className = 'mv-cell' + (isFilterBacked ? ' mv-cell--filter' : '');
             cell.dataset.sceneId = id;
+
+            // A scene with no file (or one that no longer exists) has nothing
+            // to stream: a <video> for it would only 404 and retry. Show a
+            // static cell that says why and keeps the remove control. The
+            // scene stays in the shared queue until someone removes it. A
+            // filter slot moves on to its next scene, as at clip end.
+            if (scenes[id]?.noFile) {
+                buildNoFileCell(cell, id);
+                insertCell(cell, id, idx);
+                if (isFilterBacked && !filterSetsFileCount(filterBackedCells.get(id)?.filter)) advanceFilterCell(id);
+                return;
+            }
+
+            const staggerSlot = newCellOrdinal++;
 
 
             const video = document.createElement('video');
@@ -2797,19 +2886,7 @@
 
             if (unmutedIds.has(id)) cell.classList.add('audio-active');
 
-            // Insert at correct queue position instead of appending to end
-            let refCell = null;
-            for (let i = idx + 1; i < queue.length; i++) {
-                const nextId = queue[i];
-                if (typeof nextId !== 'string') continue;
-                const next = existing.get(nextId);
-                if (next) { refCell = next; break; }
-            }
-            grid.insertBefore(cell, refCell);
-            // Register the new cell so a duplicate of this id later in the same
-            // queue (two filter slots resolving to the same scene, etc.) is
-            // skipped instead of spawning a second cell with the same id.
-            existing.set(id, cell);
+            insertCell(cell, id, idx);
 
             // Start the stream, staggered. The cell is in the DOM and fully
             // wired by now; if it's torn down during its delay (queue changed),
@@ -2916,7 +2993,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    query: `query { findScenes(filter: { per_page: ${perPage}, sort: "random" }) { scenes { id } } }`
+                    query: `query { findScenes(filter: { per_page: ${perPage}, sort: "random" }, scene_filter: { file_count: { value: 0, modifier: GREATER_THAN } }) { scenes { id } } }`
                 })
             });
             const data = await res.json();

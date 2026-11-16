@@ -646,6 +646,34 @@ body.mv-idle .mv-cell:hover:not(.mv-popup-open) .mv-seekbar {
 #mv-empty a { color: var(--mv-accent); text-decoration: none; }
 #mv-empty a:hover { text-decoration: underline; }
 
+/* ── No-file cell ──────────────────────────────────────────────────────────── */
+/* A scene with no file (or one deleted from Stash) gets a static cell with no
+   <video>. Its title and remove control stay visible so you can see why and
+   clear it. */
+
+.mv-cell--nofile { cursor: default; }
+
+.mv-nofile {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 36px 12px;
+    text-align: center;
+    color: #888;
+    font-size: 12px;
+}
+
+.mv-nofile strong { color: #ccc; font-size: 13px; font-weight: 600; }
+
+.mv-cell--nofile .mv-cell-overlay {
+    opacity: 1;
+    background: none;
+}
+
 /* ── Loading spinner ───────────────────────────────────────────────────────── */
 
 .mv-loading {
