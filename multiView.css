@@ -55,11 +55,44 @@ body:not(.mv-picking-mode) .mv-add-btn {
     align-items: center;
     justify-content: center;
     padding: 0;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 
 .mv-add-btn:hover {
     background: rgba(0, 0, 0, 0.85);
+}
+
+/* ── Reveal on card hover ──────────────────────────────────────────────────────
+   The add button used to sit on every card the whole time picking mode was on,
+   which reads as clutter across a full grid. Fade it in with the card instead.
+
+   Opacity rather than display, so it can transition and so the card's layout
+   never shifts. pointer-events is tied to it so a hidden button cannot be
+   clicked by accident.
+
+   QUEUED buttons stay visible: they are state, not an affordance — you should
+   be able to see what is already in the queue without sweeping the grid.
+
+   Touch devices have no hover, so the button would be unreachable there; the
+   media query below keeps it permanently visible when hover is unavailable. */
+.mv-add-btn {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.scene-card:hover .mv-add-btn,
+.scene-card:focus-within .mv-add-btn,
+.mv-add-btn:focus-visible,
+.mv-add-btn.mv-queued {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+@media (hover: none) {
+    .mv-add-btn {
+        opacity: 1;
+        pointer-events: auto;
+    }
 }
 
 .mv-add-btn.mv-queued {
