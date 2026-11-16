@@ -210,8 +210,21 @@
         return btn;
     }
 
+    // The picking toggle belongs on lists of scene cards: the scenes list, the
+    // scenes tab of a performer, studio, tag or group, or any other page
+    // showing scene cards (an entity page's default tab). Images, galleries,
+    // performers and the other lists have a zoom slider too, but picking
+    // there does nothing.
+    function isPickingToggleAllowedHere() {
+        const p = window.location.pathname;
+        if (/^\/scenes\/\d+/.test(p)) return false;
+        if (/^\/scenes\/?$/.test(p)) return true;
+        if (/^\/(performers|studios|tags|groups)\/\d+\/scenes\/?$/.test(p)) return true;
+        return !!document.querySelector('.scene-card');
+    }
+
     function injectPickingModeToggle() {
-        if (window.location.pathname.match(/^\/scenes\/\d+/)) {
+        if (!isPickingToggleAllowedHere()) {
             document.getElementById('mv-picking-standalone')?.remove();
             document.querySelectorAll('.mv-picking-toggle-btn').forEach(b => b.remove());
             return;
@@ -295,7 +308,10 @@
         const id = match[1];
         if (document.getElementById('mv-scene-btn')) return;
 
-        const toolbar = document.querySelector('.scene-toolbar .scene-toolbar-group:last-child, .scene-toolbar');
+        // Append to the toolbar itself, not into one of its groups: themes
+        // such as Refract hide the groups and draw their own strip, which
+        // would hide a button placed inside one.
+        const toolbar = document.querySelector('.scene-toolbar');
         if (!toolbar) return;
 
         const btn = document.createElement('button');
