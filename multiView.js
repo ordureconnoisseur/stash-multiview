@@ -299,11 +299,13 @@
         btn.title = isQueued(id) ? 'Remove from Multiview' : 'Add to Multiview';
         btn.innerHTML = GRID_ICON_SVG;
 
+        // Read the scene id at click time: Stash keeps the scene page (and
+        // this button) mounted when going from one scene to another, so an
+        // id captured at creation would toggle the previous scene.
         btn.addEventListener('click', () => {
-            toggleScene(id);
-            const queued = isQueued(id);
-            btn.classList.toggle('active', queued);
-            btn.title = queued ? 'Remove from Multiview' : 'Add to Multiview';
+            const m = window.location.pathname.match(/^\/scenes\/(\d+)/);
+            if (!m) return;
+            toggleScene(m[1]);   // reflectQueue() refreshes this button
         });
 
         toolbar.appendChild(btn);
