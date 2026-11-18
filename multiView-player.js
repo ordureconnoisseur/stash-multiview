@@ -759,6 +759,8 @@
             else if (is480)            s.mp4480   = entry.url;
             else if (is360 && isWebm)  s.webm360  = entry.url;
             else if (is360)            s.mp4360   = entry.url;
+            else if (label === 'webm') s.webmSrc  = entry.url;   // transcode at the source's own size
+            else if (label === 'mp4')  s.mp4Src   = entry.url;
             else if (!s.direct)        s.direct   = entry.url;
         }
         return s;
@@ -1376,7 +1378,29 @@
         if (preferred === 'direct') return direct;
 
         const res = preferred.replace(/^(webm|mp4)/, '');
-        return s[preferred] || s['webm' + res] || s['mp4' + res] || direct;
+        const exact = s[preferred] || s['webm' + res] || s['mp4' + res];
+        if (exact) return exact;
+        // Stash offers no transcode larger than the source, so a small clip
+        // falls back to its original file. If this browser can't decode that
+        // (HEVC in Chromium or Firefox on Linux: sound over a black tile),
+        // take the transcode at the clip's own size, or the next smaller one.
+        if (!canPlayOriginal(scenes[id].codec)) {
+            const [fmt, other] = preferred.startsWith('mp4') ? ['mp4', 'webm'] : ['webm', 'mp4'];
+            if (s[fmt + 'Src'] || s[other + 'Src']) return s[fmt + 'Src'] || s[other + 'Src'];
+            const sizes = ['1080', '720', '480', '360'];
+            for (const r of sizes.slice(sizes.indexOf(res) + 1)) {
+                if (s[fmt + r] || s[other + r]) return s[fmt + r] || s[other + r];
+            }
+        }
+        return direct;
+    }
+
+    // Only HEVC is asked about: the transcode pipeline makes most of the
+    // library HEVC, and it is the codec browsers decode only with hardware.
+    const ORIGINAL_TYPES = { hevc: 'video/mp4; codecs="hvc1.1.6.L93.B0"' };
+    function canPlayOriginal(codec) {
+        const type = ORIGINAL_TYPES[codec];
+        return !type || document.createElement('video').canPlayType(type) !== '';
     }
 
     // �"?�"? GraphQL �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
@@ -1391,7 +1415,7 @@
                         findScene(id: $id) {
                             title
                             o_counter
-                            files { path duration }
+                            files { path duration video_codec }
                             sceneStreams { url mime_type label }
                         }
                     }`,
@@ -1412,7 +1436,7 @@
                 const path = scene.files?.[0]?.path;
                 title = path ? path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : String(id);
             }
-            scenes[id] = { id, title, oCount: scene.o_counter ?? 0, duration: scene.files?.[0]?.duration ?? null, streams: parseStreams(scene.sceneStreams),
+            scenes[id] = { id, title, oCount: scene.o_counter ?? 0, duration: scene.files?.[0]?.duration ?? null, codec: scene.files?.[0]?.video_codec ?? null, streams: parseStreams(scene.sceneStreams),
                            noFile: Array.isArray(scene.files) && scene.files.length === 0 };
         } catch {
             if (!scenes[id]) scenes[id] = { id, title: String(id), streams: {} };
