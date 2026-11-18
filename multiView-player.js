@@ -744,7 +744,12 @@
         if (!streamList) return s;
         for (const entry of streamList) {
             const label = (entry.label || '').toLowerCase();
-            const isWebm = (entry.mime_type || '').includes('webm');
+            const mime = (entry.mime_type || '').toLowerCase();
+            // Only files a <video> element plays. Stash also lists HLS and DASH
+            // at each size, and those landed in the MP4 slots: choosing an MP4
+            // quality then handed the browser a .mpd manifest.
+            if (!mime.startsWith('video/')) continue;
+            const isWebm = mime.includes('webm');
             
             const is1080 = label.includes('1080');
             const is720 = label.includes('720');
