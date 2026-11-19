@@ -476,11 +476,17 @@
         return !!buildSceneFilter(f || {})?.file_count;
     }
 
-    // excludeId: fetch 3 candidates so we can skip the current scene when advancing
-    async function resolveFilterSlot(item, excludeId = null) {
+    // Up to `count` different random scenes for a filter slot, none of them
+    // in `exclude` (the scenes already on the wall). Slots that share a
+    // filter are resolved together through this, so they get different
+    // scenes: picked one by one, a filter with a few dozen matches handed
+    // two slots the same scene, and the grid shows one cell per scene, so
+    // the wall came up short.
+    async function resolveFilterScenes(item, count, exclude = new Set()) {
+        if (count <= 0) return [];
         try {
             const f = item.filter || {};
-            const findFilter = { per_page: excludeId ? 3 : 1, sort: 'random' };
+            const findFilter = { per_page: Math.min(100, count + exclude.size + 2), sort: 'random' };
             if (f.q) findFilter.q = f.q;
             const sceneFilter = buildSceneFilter(f) || {};
             if (!sceneFilter.file_count) sceneFilter.file_count = HAS_FILE;
@@ -493,23 +499,40 @@
                 })
             });
             const data = await res.json();
-            const list = data?.data?.findScenes?.scenes || [];
-            const pick = excludeId ? (list.find(s => String(s.id) !== excludeId) || list[0]) : list[0];
-            return pick ? String(pick.id) : null;
-        } catch { return null; }
+            const ids = (data?.data?.findScenes?.scenes || []).map(s => String(s.id));
+            return [...new Set(ids)].filter(id => !exclude.has(id)).slice(0, count);
+        } catch { return []; }
+    }
+
+    // Resolve each filter slot in `slots` (indexes into rawQueue whose entry
+    // in `out` is still empty), slots sharing a filter together, avoiding
+    // every scene already placed in `out`. Fills `out` and `backing`.
+    async function fillFilterSlots(rawQueue, slots, out, backing) {
+        const groups = new Map();
+        for (const i of slots) {
+            const key = JSON.stringify(rawQueue[i].filter || {});
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(i);
+        }
+        const taken = new Set(out.filter(Boolean));
+        await Promise.all([...groups.values()].map(async idxs => {
+            const item = rawQueue[idxs[0]];
+            const ids = await resolveFilterScenes(item, idxs.length, taken);
+            idxs.forEach((i, n) => {
+                const id = ids[n];
+                if (!id) return;
+                out[i] = id;
+                backing.set(id, rawQueue[i]);
+            });
+        }));
     }
 
     async function resolveQueue(rawQueue) {
         filterBackedCells.clear();
-        const resolved = await Promise.all(
-            rawQueue.map(async item => {
-                if (typeof item === 'string') return item;
-                const id = await resolveFilterSlot(item);
-                if (id) filterBackedCells.set(id, item);
-                return id;
-            })
-        );
-        return resolved.filter(Boolean);
+        const out = rawQueue.map(item => typeof item === 'string' ? item : null);
+        const slots = rawQueue.map((item, i) => typeof item === 'string' ? -1 : i).filter(i => i >= 0);
+        await fillFilterSlots(rawQueue, slots, out, filterBackedCells);
+        return out.filter(Boolean);
     }
 
     // Like resolveQueue but reuses currently-playing IDs for existing filter slots
@@ -522,24 +545,23 @@
             available.get(key).push(id);
         }
         const newFilterBackedCells = new Map();
-        const resolved = await Promise.all(
-            rawQueue.map(async item => {
-                if (typeof item === 'string') return item;
-                const key = JSON.stringify(item.filter || {});
-                const pool = available.get(key);
-                if (pool && pool.length > 0) {
-                    const id = pool.shift();
-                    newFilterBackedCells.set(id, item);
-                    return id;
-                }
-                const id = await resolveFilterSlot(item);
-                if (id) newFilterBackedCells.set(id, item);
-                return id;
-            })
-        );
+        const out = rawQueue.map(item => typeof item === 'string' ? item : null);
+        const slots = [];
+        rawQueue.forEach((item, i) => {
+            if (typeof item === 'string') return;
+            const pool = available.get(JSON.stringify(item.filter || {}));
+            if (pool && pool.length > 0) {
+                const id = pool.shift();
+                newFilterBackedCells.set(id, item);
+                out[i] = id;
+            } else {
+                slots.push(i);
+            }
+        });
+        await fillFilterSlots(rawQueue, slots, out, newFilterBackedCells);
         filterBackedCells.clear();
         for (const [k, v] of newFilterBackedCells) filterBackedCells.set(k, v);
-        return resolved.filter(Boolean);
+        return out.filter(Boolean);
     }
 
     // Same filter slot? Compared by the filter itself, as resolveQueuePreserving does.
@@ -597,8 +619,17 @@
     async function advanceFilterCell(id) {
         const filterItem = filterBackedCells.get(id);
         if (!filterItem) return;
-        const newId = await resolveFilterSlot(filterItem, id);
-        if (!newId || newId === id) {
+        // Another match that isn't on the wall already (that would merge two
+        // tiles into one). A shuffle moves every tile at once, so another
+        // tile may have taken this pick meanwhile: look again. None left:
+        // this one starts over.
+        let newId = null;
+        for (let tries = 0; tries < 3 && !newId; tries++) {
+            const [pick] = await resolveFilterScenes(filterItem, 1, new Set([...queue, id]));
+            if (!pick) break;
+            if (!queue.includes(pick)) newId = pick;
+        }
+        if (!newId || !queue.includes(id)) {
             const cell = document.querySelector(`.mv-cell[data-scene-id="${id}"]`);
             const video = cell?.querySelector('video');
             if (video) seekToStart(id, video);
