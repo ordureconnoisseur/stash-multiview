@@ -1646,6 +1646,16 @@
         if (key in map) { delete map[key]; progressMapDirty = true; }
     }
 
+    // For a remote driving this page (the multiview-wall service, over the
+    // DevTools protocol): where a particular scene's tile starts the next
+    // time one is made for it, as a resume position does. t seconds in, or
+    // 0 for the top.
+    window.multiViewStartAt = (id, t) => {
+        if (t > 0) setResumeTime(id, t); else clearResumeTime(id);
+        flushProgressMap();
+        return true;
+    };
+
     // Snapshot every non-filter cell's effective playhead into the map.
     function snapshotAllProgress() {
         document.querySelectorAll('.mv-cell').forEach(cell => {
