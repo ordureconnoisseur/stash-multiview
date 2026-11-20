@@ -1651,10 +1651,113 @@
     // time one is made for it, as a resume position does. t seconds in, or
     // 0 for the top.
     window.multiViewStartAt = (id, t) => {
-        if (t > 0) setResumeTime(id, t); else clearResumeTime(id);
+        // Under PROGRESS_MIN_SAVE a resume position isn't kept, so that is
+        // the top too (rather than leaving an older position standing).
+        if (t >= PROGRESS_MIN_SAVE) setResumeTime(id, t); else clearResumeTime(id);
         flushProgressMap();
         return true;
     };
+
+    // Where a new tile for a scene starts: at A of its loop (inside a loop,
+    // "where I left off" means nothing), else where it was left off (never
+    // for a filter slot), unless that is at or past the end (the scene
+    // re-encoded shorter, or saved right at the end): then the top, rather
+    // than a ?start= past the end of the file.
+    function startTimeFor(id, isFilterBacked) {
+        const loop = isFilterBacked ? null : getLoop(id);
+        if (loop) return loop.a;
+        let t = isFilterBacked ? 0 : getResumeTime(id);
+        const dur = scenes[id]?.duration;
+        if (t > 0 && dur && t > dur - PROGRESS_END_MARGIN) {
+            t = 0;
+            clearResumeTime(id);
+        }
+        return t;
+    }
+
+    // ── A scene got ready ahead ────────────────────────────────────────────
+    // For a remote that knows what comes next (the multiview-wall service's
+    // binge, one scene at a time): window.multiViewPreload(id, t) opens that
+    // scene's stream now, t seconds in, in a hidden paused video. The next
+    // tile made for it takes that video over when it would open the same
+    // stream at the same place, so it starts at once instead of waiting for
+    // a transcode to start. One at a time; a new call replaces it, and
+    // multiViewPreload(null) drops it.
+    let warm = null;      // { id, t, key, video }
+    const WARM_RATE = 0.0625;   // the slowest a <video> plays
+    let warmCalls = 0;
+    const warmKey = (src, t) => src + '|' + t;
+
+    function dropWarm() {
+        if (!warm) return;
+        const v = warm.video;
+        warm = null;
+        try { v.pause(); v.removeAttribute('src'); v.load(); } catch {}
+        v.remove();
+    }
+
+    // The ready video for this tile, if it is the same stream and place; any
+    // other is dropped, since this tile is what it was got ready for.
+    function takeWarm(id, src, t) {
+        if (!warm) return null;
+        if (warm.id !== id || warm.key !== warmKey(src, t) || warm.video.error) {
+            if (warm.id === id) dropWarm();
+            return null;
+        }
+        const v = warm.video;
+        warm = null;
+        v.removeAttribute('style');
+        v.preload = 'auto';
+        v.defaultPlaybackRate = 1;
+        v.playbackRate = 1;
+        return v;
+    }
+
+    window.multiViewPreload = async (id, t = 0) => {
+        const call = ++warmCalls;
+        if (id === null || id === undefined) { dropWarm(); return true; }
+        id = String(id);
+        window.multiViewStartAt(id, t);
+        await loadSceneMeta([id]);
+        if (call !== warmCalls) return false;
+        // Already on the wall (it went up meanwhile), or nothing to play.
+        const showing = [...document.querySelectorAll('.mv-cell')].some(c => c.dataset.sceneId === id);
+        if (showing || scenes[id]?.noFile) { dropWarm(); return false; }
+        const src = pickStream(id);
+        const start = startTimeFor(id, filterBackedCells.has(id));
+        if (warm?.id === id && warm.key === warmKey(src, start) && !warm.video.error) return true;
+        dropWarm();
+        const v = document.createElement('video');
+        v.muted = true;
+        v.playsInline = true;
+        v.disablePictureInPicture = true;
+        v.preload = 'auto';
+        // Out of sight but in the page, so its first frame is decoded too.
+        v.style.cssText = 'position:fixed;left:0;top:0;width:16px;height:9px;opacity:0;pointer-events:none;z-index:-1';
+        if (start > 0 && isTranscodeUrl(src)) {
+            v.src = withStart(src, start);
+        } else {
+            v.src = src;
+            if (start > 0) v.addEventListener('loadedmetadata', () => { try { v.currentTime = start; } catch {} }, { once: true });
+        }
+        v.addEventListener('error', () => { if (warm?.video === v) dropWarm(); }, { once: true });
+        // Kept creeping forward rather than paused: the browser closes a
+        // paused video's stream after some seconds of not reading it, and a
+        // transcode can't carry on from where it stopped, so the tile would
+        // wait for a new one. At 1/16 speed it moves on a few seconds a
+        // minute, and the stream stays open.
+        v.addEventListener('canplay', () => {
+            if (warm?.video !== v) return;
+            v.playbackRate = WARM_RATE;
+            v.play().catch(() => {});
+        }, { once: true });
+        document.body.appendChild(v);
+        warm = { id, t: Number(t) || 0, key: warmKey(src, start), video: v };
+        return true;
+    };
+    // What is ready: { id, t } as asked for (t as given), and how far its
+    // video got (readyState), or null.
+    window.multiViewPreloaded = () => warm && { id: warm.id, t: warm.t, ready: warm.video.readyState };
 
     // Snapshot every non-filter cell's effective playhead into the map.
     function snapshotAllProgress() {
@@ -2485,19 +2588,13 @@
             const staggerSlot = newCellOrdinal++;
 
 
-            const video = document.createElement('video');
             const baseSrc = pickStream(id);
-            // A looped scene opens at A instead of wherever it was left off:
-            // inside a loop, "where I left off" has no meaning.
             const cellLoop = isFilterBacked ? null : getLoop(id);
-            let resumeTime = cellLoop ? cellLoop.a : (isFilterBacked ? 0 : getResumeTime(id));
-            const dur = scenes[id]?.duration;
-            if (!cellLoop && resumeTime > 0 && dur && resumeTime > dur - PROGRESS_END_MARGIN) {
-                // Stale/at-or-past-end offset (scene re-encoded shorter, or saved
-                // right at the end). Start fresh rather than ?start= past EOF.
-                resumeTime = 0;
-                clearResumeTime(id);
-            }
+            const resumeTime = startTimeFor(id, isFilterBacked);
+            // A video got ready ahead for this same stream and place
+            // (multiViewPreload) is taken over: the tile starts at once.
+            const warmVideo = takeWarm(id, baseSrc, resumeTime);
+            const video = warmVideo || document.createElement('video');
             const isTranscodeSrc = isTranscodeUrl(baseSrc);
             // A transcode resumed via ?start= only contains [resumeTime, end], so
             // native loop would replay just that tail forever. Start it unlooped
@@ -2507,6 +2604,15 @@
             // (invoked from the staggered start below) so a full grid doesn't
             // fire every transcode request at the same instant.
             const applyInitialSrc = () => {
+                if (warmVideo) {
+                    // Its stream is open at resumeTime already. Replay what it
+                    // has been through for the handlers wired above, then play.
+                    if (resumeTime > 0 && isTranscodeSrc) seekBases.set(id, resumeTime);
+                    if (video.readyState >= 1) video.dispatchEvent(new Event('loadedmetadata'));
+                    if (video.readyState >= 3) video.dispatchEvent(new Event('canplay'));
+                    video.play().catch(() => {});
+                    return;
+                }
                 if (resumeTime > 0 && isTranscodeSrc) {
                     // Transcode resume is reliable via ?start=; currentTime seeking
                     // on a live transcode is not.
