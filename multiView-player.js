@@ -1759,6 +1759,67 @@
     // video got (readyState), or null.
     window.multiViewPreloaded = () => warm && { id: warm.id, t: warm.t, ready: warm.video.readyState };
 
+    // ── Crossfade ─────────────────────────────────────────────────────────
+    // For a remote showing one scene at a time (the multiview-wall service's
+    // binge): with window.multiViewCrossfade = ms, a scene that replaces the
+    // only one on the wall comes in underneath it, and the old one, moved to
+    // a layer over it at the same place, plays on until the new one has put
+    // a frame on screen, then fades out over ms. So no cut, and no black
+    // tile with a spinner while the new one loads. Unset or 0: a cut.
+    const FADE_WAIT_MS = 8000;   // the longest the old one waits for the new one's picture
+    let leaving = null;          // { el, video, ms, incoming, started, timers }
+
+    function crossfadeMs() {
+        const n = Number(window.multiViewCrossfade);
+        return n > 0 ? Math.min(n, 5000) : 0;
+    }
+
+    function finishLeaving() {
+        if (!leaving) return;
+        const l = leaving;
+        leaving = null;
+        l.timers.forEach(clearTimeout);
+        teardownPlayTracking(l.video);
+        l.video._mvCleanup?.();
+        l.el.remove();
+    }
+
+    function startFade(l) {
+        if (leaving !== l || l.started) return;
+        l.started = true;
+        void l.el.offsetWidth;   // its opacity 1 computed, so the change transitions
+        l.el.classList.add('mv-gone');
+        l.timers.push(setTimeout(() => { if (leaving === l) finishLeaving(); }, l.ms + 100));
+    }
+
+    // Fade once `incoming` presents a frame (where frames can't be watched,
+    // once it plays).
+    function fadeWhenReady(l, incoming) {
+        l.incoming = incoming;
+        const go = () => { if (l.incoming === incoming) startFade(l); };
+        if (incoming.requestVideoFrameCallback) incoming.requestVideoFrameCallback(go);
+        else incoming.addEventListener('playing', go, { once: true });
+    }
+
+    // The old cell's video moves (still playing) to a layer at `rect`, its
+    // place before the new cell went into the grid.
+    function crossfadeOut(oldCell, rect, video, incoming, ms) {
+        finishLeaving();
+        const el = document.createElement('div');
+        el.className = 'mv-leaving';
+        el.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;`
+            + `transition-duration:${ms}ms;border-radius:${getComputedStyle(oldCell).borderRadius}`;
+        video.style.objectFit = getComputedStyle(video).objectFit;
+        // In the page first, so the video goes from one place in it to
+        // another and isn't paused on the way.
+        document.body.appendChild(el);
+        el.appendChild(video);
+        const l = { el, video, ms, incoming: null, started: false, timers: [] };
+        leaving = l;
+        fadeWhenReady(l, incoming);
+        l.timers.push(setTimeout(() => startFade(l), FADE_WAIT_MS));
+    }
+
     // Snapshot every non-filter cell's effective playhead into the map.
     function snapshotAllProgress() {
         document.querySelectorAll('.mv-cell').forEach(cell => {
@@ -2545,6 +2606,11 @@
             if (cid && !existing.has(cid)) existing.set(cid, cell); // canonical = first cell per id
         }
         const queueSet = new Set(queue);
+        // The only tile, and its place now (new cells added below move it),
+        // for a crossfade into the one replacing it.
+        const soleOld = crossfadeMs() > 0 && grid.children.length === 1 ? grid.children[0] : null;
+        const soleRect = soleOld?.getBoundingClientRect();
+        const created = [];   // this pass's new videos
 
         // Insert at correct queue position instead of appending to end, and
         // register the new cell so a duplicate of this id later in the same
@@ -3088,6 +3154,7 @@
             if (unmutedIds.has(id)) cell.classList.add('audio-active');
 
             insertCell(cell, id, idx);
+            created.push(video);
 
             // Start the stream, staggered. The cell is in the DOM and fully
             // wired by now; if it's torn down during its delay (queue changed),
@@ -3103,10 +3170,24 @@
         // Remove cells no longer in queue. Walk the real DOM (not the id-keyed
         // `existing` map) so any stray duplicate-id cell is also torn down and
         // can't leak its <video>/watchdog. Keep only the canonical cell per id.
+        // One scene replacing the only one, with a picture to fade from:
+        // a crossfade (see crossfadeOut).
+        const incoming = created.length === 1 && grid.children.length === 2 ? created[0] : null;
+        const fadeMs = crossfadeMs();
         for (const cell of Array.from(grid.children)) {
             const cid = cell.dataset.sceneId;
             if (cid && queueSet.has(cid) && existing.get(cid) === cell) continue;
             const v = cell.querySelector('video');
+            if (fadeMs && incoming && cell === soleOld && v && v.readyState >= 2) {
+                crossfadeOut(cell, soleRect, v, incoming, fadeMs);
+                cell.remove();
+                continue;
+            }
+            // The scene a crossfade waits for, gone before it showed: wait
+            // for the one replacing it instead, or end the fade.
+            if (v && leaving && !leaving.started && leaving.incoming === v) {
+                if (incoming) fadeWhenReady(leaving, incoming); else finishLeaving();
+            }
             if (v) {
                 teardownPlayTracking(v);
                 v._mvCleanup?.();
