@@ -1777,8 +1777,8 @@
     // a layer over it at the same place, plays on until the new one has put
     // a frame on screen, then fades out over ms. So no cut, and no black
     // tile with a spinner while the new one loads. Unset or 0: a cut.
-    const FADE_WAIT_MS = 8000;   // the longest the old one waits for the new one's picture
-    let leaving = null;          // { el, video, ms, incoming, started, timers }
+    const FADE_WAIT_MS = 8000;   // the longest the old one waits for a new one's picture
+    let leaving = null;          // { el, video, ms, incoming, started, cap, timers }
 
     function crossfadeMs() {
         const n = Number(window.multiViewCrossfade);
@@ -1789,6 +1789,7 @@
         if (!leaving) return;
         const l = leaving;
         leaving = null;
+        clearTimeout(l.cap);
         l.timers.forEach(clearTimeout);
         teardownPlayTracking(l.video);
         l.video._mvCleanup?.();
@@ -1798,18 +1799,21 @@
     function startFade(l) {
         if (leaving !== l || l.started) return;
         l.started = true;
+        clearTimeout(l.cap);
         void l.el.offsetWidth;   // its opacity 1 computed, so the change transitions
         l.el.classList.add('mv-gone');
         l.timers.push(setTimeout(() => { if (leaving === l) finishLeaving(); }, l.ms + 100));
     }
 
     // Fade once `incoming` presents a frame (where frames can't be watched,
-    // once it plays).
+    // once it plays), or after FADE_WAIT_MS at the latest.
     function fadeWhenReady(l, incoming) {
         l.incoming = incoming;
         const go = () => { if (l.incoming === incoming) startFade(l); };
         if (incoming.requestVideoFrameCallback) incoming.requestVideoFrameCallback(go);
         else incoming.addEventListener('playing', go, { once: true });
+        clearTimeout(l.cap);
+        l.cap = setTimeout(() => startFade(l), FADE_WAIT_MS);
     }
 
     // The old cell's video moves (still playing) to a layer at `rect`, its
@@ -1825,10 +1829,9 @@
         // another and isn't paused on the way.
         document.body.appendChild(el);
         el.appendChild(video);
-        const l = { el, video, ms, incoming: null, started: false, timers: [] };
+        const l = { el, video, ms, incoming: null, started: false, cap: 0, timers: [] };
         leaving = l;
         fadeWhenReady(l, incoming);
-        l.timers.push(setTimeout(() => startFade(l), FADE_WAIT_MS));
     }
 
     // Snapshot every non-filter cell's effective playhead into the map.
