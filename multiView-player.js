@@ -1759,12 +1759,16 @@
         const call = ++warmCalls;
         if (id === null || id === undefined) { dropWarm(); return true; }
         id = String(id);
-        window.multiViewStartAt(id, t);
+        const asked = Number(t) || 0;
+        const onWall = () => [...document.querySelectorAll('.mv-cell')].some(c => c.dataset.sceneId === id);
+        // Where its tile starts, as a resume position does. Not while a tile
+        // for it is up (that one's own position stands), and not again for
+        // the same ask (a remote asks every second or so while it wants it).
+        if (!onWall() && !(warm?.id === id && warm.t === asked)) window.multiViewStartAt(id, t);
         await loadSceneMeta([id]);
         if (call !== warmCalls) return false;
         // Already on the wall (it went up meanwhile), or nothing to play.
-        const showing = [...document.querySelectorAll('.mv-cell')].some(c => c.dataset.sceneId === id);
-        if (showing || scenes[id]?.noFile) { dropWarm(); return false; }
+        if (onWall() || scenes[id]?.noFile) { dropWarm(); return false; }
         const src = pickStream(id);
         const start = startTimeFor(id, filterBackedCells.has(id));
         if (warm?.id === id && warm.key === warmKey(src, start) && !warm.video.error) {
@@ -1804,7 +1808,7 @@
             v.play().catch(() => {});
         }, { once: true });
         document.body.appendChild(v);
-        warm = { id, t: Number(t) || 0, key: warmKey(src, start), video: v, timer: warmLife(v), home };
+        warm = { id, t: asked, key: warmKey(src, start), video: v, timer: warmLife(v), home };
         return true;
     };
     // What is ready: { id, t } as asked for (t as given), and how far its
