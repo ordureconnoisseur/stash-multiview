@@ -1772,7 +1772,10 @@
         const src = pickStream(id);
         const start = startTimeFor(id, filterBackedCells.has(id));
         if (warm?.id === id && warm.key === warmKey(src, start) && !warm.video.error) {
-            // Still wanted: it lives on.
+            // Still wanted: it lives on, as what was asked for now (another t
+            // can be the same stream: under 5 s is the top, a loop starts at
+            // its A).
+            warm.t = asked;
             clearTimeout(warm.timer);
             warm.timer = warmLife(warm.video);
             return true;
