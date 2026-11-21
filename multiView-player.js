@@ -1692,8 +1692,10 @@
     // stream at the same place, so it starts at once instead of waiting for
     // a transcode to start. One at a time; a new call replaces it, and
     // multiViewPreload(null) drops it.
-    let warm = null;      // { id, t, key, video, timer }
+    let warm = null;      // { id, t, key, video, timer, home }
     const WARM_RATE = 0.0625;   // the slowest a <video> plays
+    // Crept on further than this when taken over, it goes back (takeWarm).
+    const WARM_DRIFT_S = 0.5;
     // Not asked for again in this long (the same multiViewPreload call),
     // it is dropped: the remote has stopped wanting it (it crashed, or moved
     // on without saying), and its stream holds a transcode open.
@@ -1702,6 +1704,13 @@
     const warmKey = (src, t) => src + '|' + t;
 
     const warmLife = v => setTimeout(() => { if (warm?.video === v) dropWarm(); }, WARM_LIFE_MS);
+
+    // Whether t, in the video's own time, is in what it has buffered.
+    function isBuffered(v, t) {
+        const b = v.buffered;
+        for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.1 && t < b.end(i)) return true;
+        return false;
+    }
 
     function dropWarm() {
         if (!warm) return;
@@ -1721,12 +1730,19 @@
             return null;
         }
         const v = warm.video;
+        const home = warm.home;
         clearTimeout(warm.timer);
         warm = null;
         // Paused, so the tile's own play() gives the events a new video
         // gives: `play` (the play count), then `playing`, or `waiting` (stall
         // recovery) if it stalled while it waited.
         v.pause();
+        // Crept on while it waited (a few seconds a minute): back to where
+        // it was asked for, if that is still buffered. If not, on from here
+        // rather than a new stream.
+        if (v.currentTime - home > WARM_DRIFT_S && isBuffered(v, home)) {
+            try { v.currentTime = home; } catch {}
+        }
         v.removeAttribute('style');
         v.preload = 'auto';
         v.defaultPlaybackRate = 1;
@@ -1760,8 +1776,13 @@
         v.preload = 'auto';
         // Out of sight but in the page, so its first frame is decoded too.
         v.style.cssText = 'position:fixed;left:0;top:0;width:16px;height:9px;opacity:0;pointer-events:none;z-index:-1';
+        // Where it was asked for, in its own time, the time base the player
+        // uses for it (see effectivePlayhead): a ?start= stream counts from
+        // its start.
+        let home = start;
         if (start > 0 && isTranscodeUrl(src)) {
             v.src = withStart(src, start);
+            home = 0;
         } else {
             v.src = src;
             if (start > 0) v.addEventListener('loadedmetadata', () => { try { v.currentTime = start; } catch {} }, { once: true });
@@ -1778,7 +1799,7 @@
             v.play().catch(() => {});
         }, { once: true });
         document.body.appendChild(v);
-        warm = { id, t: Number(t) || 0, key: warmKey(src, start), video: v, timer: warmLife(v) };
+        warm = { id, t: Number(t) || 0, key: warmKey(src, start), video: v, timer: warmLife(v), home };
         return true;
     };
     // What is ready: { id, t } as asked for (t as given), and how far its
