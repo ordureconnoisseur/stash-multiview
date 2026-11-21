@@ -1683,14 +1683,19 @@
     // stream at the same place, so it starts at once instead of waiting for
     // a transcode to start. One at a time; a new call replaces it, and
     // multiViewPreload(null) drops it.
-    let warm = null;      // { id, t, key, video }
+    let warm = null;      // { id, t, key, video, timer }
     const WARM_RATE = 0.0625;   // the slowest a <video> plays
+    // Not taken over in this long, it is dropped: its stream holds a
+    // transcode open, and it has crept on 7.5 s by then. A remote that
+    // still wants it asks again.
+    const WARM_LIFE_MS = 2 * 60 * 1000;
     let warmCalls = 0;
     const warmKey = (src, t) => src + '|' + t;
 
     function dropWarm() {
         if (!warm) return;
         const v = warm.video;
+        clearTimeout(warm.timer);
         warm = null;
         try { v.pause(); v.removeAttribute('src'); v.load(); } catch {}
         v.remove();
@@ -1705,6 +1710,7 @@
             return null;
         }
         const v = warm.video;
+        clearTimeout(warm.timer);
         warm = null;
         // Paused, so the tile's own play() gives the events a new video
         // gives: `play` (the play count), then `playing`, or `waiting` (stall
@@ -1756,7 +1762,8 @@
             v.play().catch(() => {});
         }, { once: true });
         document.body.appendChild(v);
-        warm = { id, t: Number(t) || 0, key: warmKey(src, start), video: v };
+        const timer = setTimeout(() => { if (warm?.video === v) dropWarm(); }, WARM_LIFE_MS);
+        warm = { id, t: Number(t) || 0, key: warmKey(src, start), video: v, timer };
         return true;
     };
     // What is ready: { id, t } as asked for (t as given), and how far its
@@ -2615,6 +2622,7 @@
         const soleOld = crossfadeMs() > 0 && grid.children.length === 1 ? grid.children[0] : null;
         const soleRect = soleOld?.getBoundingClientRect();
         const created = [];   // this pass's new videos
+        let addedCells = 0;
 
         // Insert at correct queue position instead of appending to end, and
         // register the new cell so a duplicate of this id later in the same
@@ -2630,6 +2638,7 @@
             }
             grid.insertBefore(cell, refCell);
             existing.set(id, cell);
+            addedCells++;
         };
 
         // Add new cells at their correct queue position (before removal to avoid layout flash)
@@ -3171,6 +3180,10 @@
                 applyInitialSrc();
             }
         });
+
+        // A scene went up that a video got ready ahead (multiViewPreload)
+        // wasn't for (that one takes it over above): it is no use now.
+        if (warm && addedCells) dropWarm();
 
         // Remove cells no longer in queue. Walk the real DOM (not the id-keyed
         // `existing` map) so any stray duplicate-id cell is also torn down and
