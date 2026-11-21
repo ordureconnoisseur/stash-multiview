@@ -1706,6 +1706,10 @@
         }
         const v = warm.video;
         warm = null;
+        // Paused, so the tile's own play() gives the events a new video
+        // gives: `play` (the play count), then `playing`, or `waiting` (stall
+        // recovery) if it stalled while it waited.
+        v.pause();
         v.removeAttribute('style');
         v.preload = 'auto';
         v.defaultPlaybackRate = 1;
@@ -2672,7 +2676,8 @@
             const applyInitialSrc = () => {
                 if (warmVideo) {
                     // Its stream is open at resumeTime already. Replay what it
-                    // has been through for the handlers wired above, then play.
+                    // has been through for the handlers wired above, then play
+                    // (takeWarm paused it, so `play` and the rest follow).
                     if (resumeTime > 0 && isTranscodeSrc) seekBases.set(id, resumeTime);
                     if (video.readyState >= 1) video.dispatchEvent(new Event('loadedmetadata'));
                     if (video.readyState >= 3) video.dispatchEvent(new Event('canplay'));
