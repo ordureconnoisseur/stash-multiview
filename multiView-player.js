@@ -1710,10 +1710,10 @@
 
     const warmLife = v => setTimeout(() => { if (warm?.video === v) dropWarm(); }, WARM_LIFE_MS);
 
-    // Whether t, in the video's own time, is in what it has buffered.
-    function isBuffered(v, t) {
-        const b = v.buffered;
-        for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.1 && t < b.end(i)) return true;
+    // Whether t, in the video's own time, is in these ranges (its buffered
+    // or seekable).
+    function within(ranges, t) {
+        for (let i = 0; i < ranges.length; i++) if (ranges.start(i) <= t + 0.1 && t <= ranges.end(i)) return true;
         return false;
     }
 
@@ -1743,9 +1743,10 @@
         // recovery) if it stalled while it waited.
         v.pause();
         // Crept on while it waited (a few seconds a minute): back to where
-        // it was asked for, if that is still buffered. If not, on from here
-        // rather than a new stream.
-        if (v.currentTime - home > WARM_DRIFT_S && isBuffered(v, home)) {
+        // it was asked for, if that is still buffered and the browser can
+        // seek there (as jumpToLoopStart asks). If not, on from here rather
+        // than a new stream.
+        if (v.currentTime - home > WARM_DRIFT_S && within(v.buffered, home) && within(v.seekable, home)) {
             try { v.currentTime = home; } catch {}
         }
         v.removeAttribute('style');
