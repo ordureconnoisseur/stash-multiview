@@ -696,7 +696,7 @@
     // seek fires after a short idle so rapid scrolling on transcoded streams
     // doesn't trigger one reload per tick. `extraDelay` staggers a grid-wide
     // seek so 16 cells don't all re-request their transcode on the same tick.
-    const wheelPending = new Map(); // id -> { delta, timeout }
+    const wheelPending = new Map(); // id -> { delta, timeout, video }
 
     function scheduleWheelSeek(id, video, delta, extraDelay = 0) {
         let pending = wheelPending.get(id);
@@ -707,6 +707,7 @@
             pending = { delta };
             wheelPending.set(id, pending);
         }
+        pending.video = video;
         pending.timeout = setTimeout(() => {
             const d = pending.delta;
             wheelPending.delete(id);
@@ -2906,9 +2907,11 @@
                 clearTimeout(sustainedPlayTimer);
                 clearTimeout(seekingSpinnerTimer); // declared below in the same cell scope; only ever called on a later render's teardown
                 // Cancel any queued wheel-seek so it can't fire applyWheelSeek on
-                // this now-detached video and resurrect a seekBases entry.
+                // this now-detached video and resurrect a seekBases entry. Only
+                // this video's: by the end of a crossfade a new tile for the
+                // same scene can have one of its own.
                 const pw = wheelPending.get(id);
-                if (pw) { clearTimeout(pw.timeout); wheelPending.delete(id); }
+                if (pw && pw.video === video) { clearTimeout(pw.timeout); wheelPending.delete(id); }
             };
             video._mvCleanup = () => {
                 video._mvRetire();
