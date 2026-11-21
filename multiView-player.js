@@ -1694,12 +1694,14 @@
     // multiViewPreload(null) drops it.
     let warm = null;      // { id, t, key, video, timer }
     const WARM_RATE = 0.0625;   // the slowest a <video> plays
-    // Not taken over in this long, it is dropped: its stream holds a
-    // transcode open, and it has crept on 7.5 s by then. A remote that
-    // still wants it asks again.
+    // Not asked for again in this long (the same multiViewPreload call),
+    // it is dropped: the remote has stopped wanting it (it crashed, or moved
+    // on without saying), and its stream holds a transcode open.
     const WARM_LIFE_MS = 2 * 60 * 1000;
     let warmCalls = 0;
     const warmKey = (src, t) => src + '|' + t;
+
+    const warmLife = v => setTimeout(() => { if (warm?.video === v) dropWarm(); }, WARM_LIFE_MS);
 
     function dropWarm() {
         if (!warm) return;
@@ -1744,7 +1746,12 @@
         if (showing || scenes[id]?.noFile) { dropWarm(); return false; }
         const src = pickStream(id);
         const start = startTimeFor(id, filterBackedCells.has(id));
-        if (warm?.id === id && warm.key === warmKey(src, start) && !warm.video.error) return true;
+        if (warm?.id === id && warm.key === warmKey(src, start) && !warm.video.error) {
+            // Still wanted: it lives on.
+            clearTimeout(warm.timer);
+            warm.timer = warmLife(warm.video);
+            return true;
+        }
         dropWarm();
         const v = document.createElement('video');
         v.muted = true;
@@ -1771,8 +1778,7 @@
             v.play().catch(() => {});
         }, { once: true });
         document.body.appendChild(v);
-        const timer = setTimeout(() => { if (warm?.video === v) dropWarm(); }, WARM_LIFE_MS);
-        warm = { id, t: Number(t) || 0, key: warmKey(src, start), video: v, timer };
+        warm = { id, t: Number(t) || 0, key: warmKey(src, start), video: v, timer: warmLife(v) };
         return true;
     };
     // What is ready: { id, t } as asked for (t as given), and how far its
