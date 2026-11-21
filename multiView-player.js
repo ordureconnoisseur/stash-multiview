@@ -2592,6 +2592,7 @@
         const titleEl = document.getElementById('mv-title');
 
         if (queue.length === 0) {
+            finishLeaving();
             grid.innerHTML = '';
             grid.className = 'layout-1x1';
             empty.style.display = 'flex';
