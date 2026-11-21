@@ -1774,11 +1774,21 @@
     // For a remote showing one scene at a time (the multiview-wall service's
     // binge): with window.multiViewCrossfade = ms, a scene that replaces the
     // only one on the wall comes in underneath it, and the old one, moved to
-    // a layer over it at the same place, plays on until the new one has put
-    // a frame on screen, then fades out over ms. So no cut, and no black
-    // tile with a spinner while the new one loads. Unset or 0: a cut.
+    // a layer in the new tile over its picture, plays on until the new one
+    // has put a frame on screen, then fades out over ms, its sound with it.
+    // So no cut, and no black tile with a spinner while the new one loads.
+    // The layer sits under the new tile's controls and is its size whatever
+    // the layout does (see .mv-leaving). Unset or 0: a cut.
     const FADE_WAIT_MS = 8000;   // the longest the old one waits for a new one's picture
-    let leaving = null;          // { el, video, ms, incoming, started, cap, timers }
+    // The old video's events that would act for its tile, which is gone:
+    // stall recovery, the A/B loop, the full scene after a partial pass, a
+    // filter tile moving on. `play` and `pause` still get through, for the
+    // play count and the Play/Pause All button. So at its end it stops on
+    // its last frame.
+    const LEAVING_BLOCKED = ['abort', 'canplay', 'canplaythrough', 'durationchange', 'emptied', 'ended',
+        'error', 'loadeddata', 'loadedmetadata', 'loadstart', 'playing', 'progress', 'ratechange', 'seeked',
+        'seeking', 'stalled', 'suspend', 'timeupdate', 'volumechange', 'waiting'];
+    let leaving = null;          // { el, video, id, ms, incoming, started, cap, done, raf }
 
     function crossfadeMs() {
         const n = Number(window.multiViewCrossfade);
@@ -1790,7 +1800,8 @@
         const l = leaving;
         leaving = null;
         clearTimeout(l.cap);
-        l.timers.forEach(clearTimeout);
+        clearTimeout(l.done);
+        cancelAnimationFrame(l.raf);
         teardownPlayTracking(l.video);
         l.video._mvCleanup?.();
         l.el.remove();
@@ -1802,13 +1813,26 @@
         clearTimeout(l.cap);
         void l.el.offsetWidth;   // its opacity 1 computed, so the change transitions
         l.el.classList.add('mv-gone');
-        l.timers.push(setTimeout(() => { if (leaving === l) finishLeaving(); }, l.ms + 100));
+        // The sound goes down with the picture.
+        const v0 = l.video.volume;
+        const step = () => {
+            if (leaving !== l) return;
+            const o = Number(getComputedStyle(l.el).opacity);
+            l.video.volume = Math.min(1, Math.max(0, v0 * o)) || 0;
+            if (o > 0) l.raf = requestAnimationFrame(step);
+        };
+        l.raf = requestAnimationFrame(step);
+        l.done = setTimeout(() => { if (leaving === l) finishLeaving(); }, l.ms + 100);
     }
 
-    // Fade once `incoming` presents a frame (where frames can't be watched,
-    // once it plays), or after FADE_WAIT_MS at the latest.
+    // Into `incoming`'s tile, over its picture, and fade once that presents
+    // a frame (where frames can't be watched, once it plays), or after
+    // FADE_WAIT_MS at the latest.
     function fadeWhenReady(l, incoming) {
         l.incoming = incoming;
+        // Straight from one tile to the other, so the video stays in the
+        // page and isn't paused on the way.
+        incoming.after(l.el);
         const go = () => { if (l.incoming === incoming) startFade(l); };
         if (incoming.requestVideoFrameCallback) incoming.requestVideoFrameCallback(go);
         else incoming.addEventListener('playing', go, { once: true });
@@ -1816,22 +1840,21 @@
         l.cap = setTimeout(() => startFade(l), FADE_WAIT_MS);
     }
 
-    // The old cell's video moves (still playing) to a layer at `rect`, its
-    // place before the new cell went into the grid.
-    function crossfadeOut(oldCell, rect, video, incoming, ms) {
+    // Scene `id`'s video, still playing, leaves its tile for a layer in
+    // `incoming`'s.
+    function crossfadeOut(id, video, incoming, ms) {
         finishLeaving();
+        video._mvRetire?.();
         const el = document.createElement('div');
         el.className = 'mv-leaving';
-        el.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;`
-            + `transition-duration:${ms}ms;border-radius:${getComputedStyle(oldCell).borderRadius}`;
-        video.style.objectFit = getComputedStyle(video).objectFit;
-        // In the page first, so the video goes from one place in it to
-        // another and isn't paused on the way.
-        document.body.appendChild(el);
-        el.appendChild(video);
-        const l = { el, video, ms, incoming: null, started: false, cap: 0, timers: [] };
+        el.style.transitionDuration = ms + 'ms';
+        for (const type of LEAVING_BLOCKED) el.addEventListener(type, e => e.stopPropagation(), true);
+        const l = { el, video, id, ms, incoming: null, started: false, cap: 0, done: 0, raf: 0 };
         leaving = l;
         fadeWhenReady(l, incoming);
+        // The layer in the page first, so the video goes from one place in
+        // it to another and isn't paused on the way.
+        el.appendChild(video);
     }
 
     // Snapshot every non-filter cell's effective playhead into the map.
@@ -2135,7 +2158,8 @@
             applyJustifiedLayout();
             return;
         }
-        const videos = [...document.querySelectorAll('.mv-cell video')];
+        // The tiles' own videos: not a crossfade's old one, in a tile's layer.
+        const videos = [...document.querySelectorAll('.mv-cell > video')];
         const loaded = videos.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
         if (!loaded.length) return;
 
@@ -2335,6 +2359,7 @@
 
     // �"?�"? Play / Pause All �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
+    // Every video in a tile, a crossfade's old one included.
     function playPauseAll() {
         const videos = [...document.querySelectorAll('.mv-cell video')];
         const anyPlaying = videos.some(v => !v.paused);
@@ -2406,6 +2431,8 @@
             queue.forEach(id => typeof id === 'string' && !scenes[id]?.noFile && unmutedIds.add(id));
         }
         document.querySelectorAll('.mv-cell').forEach(applyAudioCell);
+        // A crossfade's old scene too, which no longer has a tile.
+        if (leaving && !unmutedIds.has(leaving.id)) leaving.video.muted = true;
         updateMuteAllBtn();
     }
 
@@ -2621,10 +2648,8 @@
             if (cid && !existing.has(cid)) existing.set(cid, cell); // canonical = first cell per id
         }
         const queueSet = new Set(queue);
-        // The only tile, and its place now (new cells added below move it),
-        // for a crossfade into the one replacing it.
+        // The only tile, for a crossfade into the one replacing it.
         const soleOld = crossfadeMs() > 0 && grid.children.length === 1 ? grid.children[0] : null;
-        const soleRect = soleOld?.getBoundingClientRect();
         const created = [];   // this pass's new videos
         let addedCells = 0;
 
@@ -2805,7 +2830,9 @@
                 }, SUSTAINED_PLAY_MS);
             });
             video.addEventListener('error', recoverVideo);
-            video._mvCleanup = () => {
+            // The tile's timers stop, and no recovery starts; the video plays
+            // on (a crossfade's old one, see crossfadeOut).
+            video._mvRetire = () => {
                 cellTornDown = true;
                 clearStallWatchdog();
                 clearTimeout(sustainedPlayTimer);
@@ -2814,6 +2841,9 @@
                 // this now-detached video and resurrect a seekBases entry.
                 const pw = wheelPending.get(id);
                 if (pw) { clearTimeout(pw.timeout); wheelPending.delete(id); }
+            };
+            video._mvCleanup = () => {
+                video._mvRetire();
                 try { video.pause(); video.removeAttribute('src'); video.load(); } catch {}
             };
 
@@ -3201,14 +3231,15 @@
             if (cid && queueSet.has(cid) && existing.get(cid) === cell) continue;
             const v = cell.querySelector('video');
             if (fadeMs && incoming && cell === soleOld && v && v.readyState >= 2) {
-                crossfadeOut(cell, soleRect, v, incoming, fadeMs);
+                crossfadeOut(cid, v, incoming, fadeMs);
                 cell.remove();
                 continue;
             }
-            // The scene a crossfade waits for, gone before it showed: wait
-            // for the one replacing it instead, or end the fade.
-            if (v && leaving && !leaving.started && leaving.incoming === v) {
-                if (incoming) fadeWhenReady(leaving, incoming); else finishLeaving();
+            // The tile a crossfade is fading into, going before it showed:
+            // on into the one replacing it, waiting for that one now. Else
+            // the crossfade ends with it.
+            if (leaving && leaving.el.parentNode === cell) {
+                if (incoming && !leaving.started) fadeWhenReady(leaving, incoming); else finishLeaving();
             }
             if (v) {
                 teardownPlayTracking(v);

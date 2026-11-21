@@ -126,24 +126,21 @@ html, body {
     padding: 3px;
 }
 
-/* A scene on its way out in a crossfade (crossfadeOut in the player): over
-   the one coming in, at the same place, fading once that one shows. The
-   player sets its place, length and corners. */
+/* A scene on its way out in a crossfade (crossfadeOut in the player): in
+   the tile coming in, so always its size, over its picture and spinner and
+   under its controls (overlay and popup 20, seekbar 15), fading once its
+   picture shows. Its video is styled as the tile's own (.mv-cell video).
+   The player sets the length of the fade. */
 .mv-leaving {
-    position: fixed;
-    z-index: 30;
+    position: absolute;
+    inset: 0;
+    z-index: 10;
     background: var(--mv-cell-bg);
-    overflow: hidden;
     pointer-events: none;
     opacity: 1;
     transition: opacity 1s ease-in-out;
 }
 .mv-leaving.mv-gone { opacity: 0; }
-.mv-leaving video {
-    width: 100%;
-    height: 100%;
-    display: block;
-}
 
 /* Layout classes set column/row counts */
 #mv-grid.layout-1x1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
