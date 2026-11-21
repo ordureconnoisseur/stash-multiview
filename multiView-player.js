@@ -2622,6 +2622,16 @@
         cell.append(msg, overlay);
     }
 
+    // A tile going: its play time sent, its stream and timers stopped.
+    function removeCell(cell) {
+        const v = cell.querySelector('video');
+        if (v) {
+            teardownPlayTracking(v);
+            v._mvCleanup?.();
+        }
+        cell.remove();
+    }
+
     function render() {
         const grid = document.getElementById('mv-grid');
         const empty = document.getElementById('mv-empty');
@@ -2629,6 +2639,7 @@
 
         if (queue.length === 0) {
             finishLeaving();
+            for (const cell of Array.from(grid.children)) removeCell(cell);
             grid.innerHTML = '';
             grid.className = 'layout-1x1';
             empty.style.display = 'flex';
@@ -3247,11 +3258,7 @@
             if (leaving && leaving.el.parentNode === cell) {
                 if (incoming && !leaving.started) fadeWhenReady(leaving, incoming); else finishLeaving();
             }
-            if (v) {
-                teardownPlayTracking(v);
-                v._mvCleanup?.();
-            }
-            cell.remove();
+            removeCell(cell);
         }
 
         refreshPlayPauseAllBtn();
