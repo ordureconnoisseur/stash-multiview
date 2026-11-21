@@ -1564,15 +1564,21 @@
         const tracker = { sceneId: id, accumulated: 0, sessionStart: null, addPlaySent: false };
         playTrackers.set(video, tracker);
 
+        // The clock runs only while it plays: from `play` (or `playing` after
+        // a stall) to `pause`, `ended` or a stall (`waiting`).
+        const start = () => { if (tracker.sessionStart == null) tracker.sessionStart = performance.now(); };
+        const stop = () => { accumulatePlay(tracker); tracker.sessionStart = null; };
         video.addEventListener('play', () => {
-            if (tracker.sessionStart == null) tracker.sessionStart = performance.now();
+            start();
             if (!tracker.addPlaySent) {
                 tracker.addPlaySent = true;
                 sceneAddPlay(id);
             }
         });
-        video.addEventListener('pause', () => accumulatePlay(tracker));
-        video.addEventListener('ended', () => accumulatePlay(tracker));
+        video.addEventListener('playing', start);
+        video.addEventListener('pause', stop);
+        video.addEventListener('ended', stop);
+        video.addEventListener('waiting', stop);
 
         if (!activityFlushTimer) {
             activityFlushTimer = setInterval(flushAllTrackers, ACTIVITY_FLUSH_MS);
