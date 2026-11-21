@@ -136,7 +136,7 @@
     // �"?�"? Web Audio �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
 
     let audioCtx = null;
-    const cellGains = new Map(); // id ��' GainNode
+    const cellGains = new Map(); // id -> { video, gain }
 
     function getAudioCtx() {
         if (!audioCtx) {
@@ -148,7 +148,9 @@
     }
 
     function connectAudio(id, video) {
-        if (cellGains.has(id)) return; // already connected
+        if (cellGains.get(id)?.video === video) return; // already connected
+        // One for a video before it, whose tile is gone, goes.
+        disconnectAudio(id);
         try {
             const ctx = getAudioCtx();
             const source = ctx.createMediaElementSource(video);
@@ -156,7 +158,7 @@
             gain.gain.value = playerSettings.defaultVolume;
             source.connect(gain);
             gain.connect(ctx.destination);
-            cellGains.set(id, gain);
+            cellGains.set(id, { video, gain });
         } catch (e) {
             // Silently ignore �?" audio still works via video.volume fallback
         }
@@ -164,16 +166,17 @@
 
     function setGain(id, value) {
         getAudioCtx(); // ensure context is resumed
-        const gain = cellGains.get(id);
-        if (gain) gain.gain.value = value;
+        const entry = cellGains.get(id);
+        if (entry) entry.gain.gain.value = value;
     }
 
-    function disconnectAudio(id) {
-        const gain = cellGains.get(id);
-        if (gain) {
-            try { gain.disconnect(); } catch {}
-            cellGains.delete(id);
-        }
+    // Scene id's Web Audio let go: only if it is `video`'s, when one is given
+    // (a tile going while another for the same scene may have it).
+    function disconnectAudio(id, video) {
+        const entry = cellGains.get(id);
+        if (!entry || (video && entry.video !== video)) return;
+        try { entry.gain.disconnect(); } catch {}
+        cellGains.delete(id);
     }
 
     // �"?�"? Queue �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
@@ -1794,7 +1797,7 @@
     const LEAVING_BLOCKED = ['abort', 'canplay', 'canplaythrough', 'durationchange', 'emptied', 'ended',
         'error', 'loadeddata', 'loadedmetadata', 'loadstart', 'playing', 'progress', 'ratechange', 'seeked',
         'seeking', 'stalled', 'suspend', 'timeupdate', 'volumechange', 'waiting'];
-    let leaving = null;          // { el, video, id, ms, incoming, started, cap, done, raf }
+    let leaving = null;          // { el, video, id, ms, incoming, started, cap, done, raf, gain }
 
     function crossfadeMs() {
         const n = Number(window.multiViewCrossfade);
@@ -1810,6 +1813,7 @@
         cancelAnimationFrame(l.raf);
         teardownPlayTracking(l.video);
         l.video._mvCleanup?.();
+        if (l.gain) try { l.gain.disconnect(); } catch {}
         l.el.remove();
     }
 
@@ -1855,7 +1859,12 @@
         el.className = 'mv-leaving';
         el.style.transitionDuration = ms + 'ms';
         for (const type of LEAVING_BLOCKED) el.addEventListener(type, e => e.stopPropagation(), true);
-        const l = { el, video, id, ms, incoming: null, started: false, cap: 0, done: 0, raf: 0 };
+        // Its Web Audio goes with it, so a tile for the same scene coming
+        // back meanwhile gets its own.
+        const audio = cellGains.get(id);
+        const gain = audio?.video === video ? audio.gain : null;
+        if (gain) cellGains.delete(id);
+        const l = { el, video, id, ms, incoming: null, started: false, cap: 0, done: 0, raf: 0, gain };
         leaving = l;
         fadeWhenReady(l, incoming);
         // The layer in the page first, so the video goes from one place in
@@ -2622,12 +2631,14 @@
         cell.append(msg, overlay);
     }
 
-    // A tile going: its play time sent, its stream and timers stopped.
+    // A tile going: its play time sent, its stream and timers stopped, its
+    // Web Audio let go.
     function removeCell(cell) {
         const v = cell.querySelector('video');
         if (v) {
             teardownPlayTracking(v);
             v._mvCleanup?.();
+            disconnectAudio(cell.dataset.sceneId, v);
         }
         cell.remove();
     }
