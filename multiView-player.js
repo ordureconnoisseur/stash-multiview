@@ -1568,7 +1568,10 @@
         playTrackers.set(video, tracker);
 
         // The clock runs only while it plays: from `play` (or `playing` after
-        // a stall) to `pause`, `ended` or a stall (`waiting`).
+        // a stall) to `pause`, `ended`, a stall (`waiting`), an error, or its
+        // stream going (`emptied`). An error needs its own stop: Firefox
+        // doesn't pause on one, so a tile that froze on it would go on
+        // counting.
         const start = () => { if (tracker.sessionStart == null) tracker.sessionStart = performance.now(); };
         const stop = () => { accumulatePlay(tracker); tracker.sessionStart = null; };
         video.addEventListener('play', () => {
@@ -1582,6 +1585,8 @@
         video.addEventListener('pause', stop);
         video.addEventListener('ended', stop);
         video.addEventListener('waiting', stop);
+        video.addEventListener('error', stop);
+        video.addEventListener('emptied', stop);
 
         if (!activityFlushTimer) {
             activityFlushTimer = setInterval(flushAllTrackers, ACTIVITY_FLUSH_MS);
